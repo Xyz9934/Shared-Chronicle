@@ -1,0 +1,486 @@
+Build a complete private Android-first mobile application from scratch.
+
+This is NOT a public website. It is a private digital space designed to be used by exactly two people.
+
+The app should feel like a beautiful combination of:
+
+- private messaging app
+- shared memory journal
+- photo album
+- music player
+- digital scrapbook
+- personal relationship/friendship space
+
+The app should be highly customizable and cloud-synchronized.
+
+CORE REQUIREMENT
+
+There are two users:
+
+1. Owner/Admin
+2. Private User
+
+Both users have their own login.
+
+Anything uploaded or created by one user should be stored in the cloud and become available to the other user's app.
+
+For example:
+
+Owner uploads a photo
+→ photo goes to cloud storage
+→ database records the photo
+→ other user's app receives/syncs the photo
+→ photo appears in their Gallery/Memory section.
+
+This same principle must work for memories, messages, letters, songs, journal entries, etc.
+
+Do NOT build this as a collection of hard-coded React pages.
+
+The application must be CONTENT-DRIVEN.
+
+Adding content later must NOT require modifying source code.
+
+---
+
+TECHNOLOGY
+
+Use a modern mobile-friendly architecture.
+
+Preferred stack:
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Capacitor for Android packaging
+- Framer Motion for animations
+- Firebase Authentication
+- Firebase Firestore
+- Firebase Storage
+- Firebase Cloud Messaging where appropriate
+
+Use Firebase because this app requires:
+
+- authentication
+- cloud database
+- cloud file storage
+- real-time synchronization
+- secure access rules
+
+Structure the application so Firebase configuration can be added through environment variables.
+
+Do NOT expose private credentials in source code.
+
+---
+
+AUTHENTICATION
+
+Create a private authentication system.
+
+Only two authorized accounts should be able to access the application.
+
+Implement:
+
+- Login
+- Logout
+- Persistent session
+- Loading state
+- Invalid-login handling
+- Protected routes
+- User roles
+
+Roles:
+
+OWNER
+USER
+
+The OWNER has additional management capabilities.
+
+Do not rely on simply hiding the app or keeping a secret URL.
+
+Use real authentication and database security rules.
+
+---
+
+HOME
+
+Create a beautiful personalized home dashboard.
+
+It should show:
+
+- Greeting
+- Profile/avatar
+- Today's date
+- Recent memories
+- Recent messages
+- Recently added photos
+- Current/last played song
+- Important upcoming dates
+- Small rotating affectionate message
+- Quick actions
+
+Quick actions:
+
++ Add Memory
++ Upload Photo
++ Send Message
++ Add Song
++ Write Letter
+
+The home screen should feel alive but not cluttered.
+
+---
+
+PRIVATE CHAT
+
+Build a real-time private messaging system between the two users.
+
+Users should be able to:
+
+- Send text messages
+- Receive messages
+- See timestamps
+- See sent/received state
+- See read/unread state
+- Scroll through conversation history
+- Send messages without leaving the app
+
+The conversation must sync through Firestore.
+
+If I send:
+
+"Good morning ❤️"
+
+from my phone, it should appear in her app.
+
+If she replies:
+
+"Good morning 😊"
+
+it should appear on my phone.
+
+Messages must persist after closing and reopening the app.
+
+Structure the database cleanly so future features such as:
+
+- image messages
+- voice messages
+- reactions
+- reply-to-message
+
+can be added later.
+
+For now, implement text messaging properly.
+
+---
+
+PHOTO GALLERY
+
+Create a shared cloud photo gallery.
+
+Users can:
+
+- Upload photos
+- Add captions
+- Add dates
+- Edit captions
+- Delete photos if permitted
+- View photos fullscreen
+- Browse photos in a beautiful grid
+- Open individual photos
+- See who uploaded them
+
+When one person uploads a photo, it must become available to the other person after synchronization.
+
+Store actual image files in Firebase Storage.
+
+Store metadata in Firestore.
+
+Do NOT store large image files directly inside Firestore.
+
+Handle:
+
+- upload progress
+- failed uploads
+- missing images
+- slow connections
+
+Gracefully.
+
+---
+
+MEMORIES
+
+Create a shared Memories section.
+
+A memory should support:
+
+- Title
+- Description
+- Date
+- Photo
+- Creator
+- Creation timestamp
+
+Users can create memories without editing code.
+
+Example:
+
+Title:
+"Our Random Evening"
+
+Description:
+"One of those ordinary days that somehow became special."
+
+Date:
+18 August 2026
+
+The memory should automatically appear on the other person's device after synchronization.
+
+Create beautiful memory cards.
+
+Allow memories to be opened into a detailed view.
+
+---
+
+TIMELINE
+
+Create a chronological shared timeline.
+
+Display memories and important events by date.
+
+Newest and oldest sorting should be supported.
+
+Use an elegant vertical timeline design.
+
+Make it easy to add future events.
+
+---
+
+LETTERS
+
+Create a shared private Letters section.
+
+Users can create letters containing:
+
+- Title
+- Message
+- Date
+- Author
+- Optional photo
+
+Letters should have an elegant envelope/paper presentation.
+
+Allow opening a letter with a smooth animation.
+
+Store letters in Firestore.
+
+---
+
+MUSIC
+
+Create a shared Music section.
+
+Users should be able to add songs.
+
+Each song should contain:
+
+- Title
+- Artist
+- Audio file
+- Cover image
+- Uploaded by
+- Date added
+
+Audio files should be stored in Firebase Storage.
+
+Create a music player that can:
+
+- Play
+- Pause
+- Previous
+- Next
+- Seek
+- Show progress
+- Show current track
+- Show playlist
+
+Do not autoplay music without user interaction.
+
+---
+
+ADMIN / OWNER AREA
+
+Create an OWNER-only management area.
+
+The owner should be able to:
+
+- Add memories
+- Upload photos
+- Add songs
+- Create letters
+- Manage timeline entries
+- Manage app content
+- Edit/delete content where permitted
+
+This must be an actual UI.
+
+The owner should NOT need Replit or source-code access to manage normal content.
+
+---
+
+DATA ARCHITECTURE
+
+Create clean Firestore collections such as:
+
+users
+messages
+memories
+photos
+letters
+songs
+timeline
+settings
+
+Use proper document IDs and timestamps.
+
+Each record should include appropriate ownership/creator information.
+
+Do not duplicate large data unnecessarily.
+
+---
+
+SECURITY
+
+Create Firestore Security Rules so:
+
+- Only authenticated users can access the app.
+- Only the two authorized accounts can access shared data.
+- Users cannot access another user's unrelated data.
+- Storage files are protected.
+- Owner-only operations require OWNER role.
+- A random authenticated account cannot simply join the private space.
+
+Never trust frontend role checks alone.
+
+Enforce important permissions in Firebase Security Rules.
+
+---
+
+UI STYLE
+
+The application should look premium, warm, romantic, cute, and personal.
+
+Use:
+
+- Soft pink
+- Rose
+- Cream
+- Warm white
+- Lavender
+- Soft gradients
+- Glassmorphism
+- Rounded cards
+- Elegant typography
+- Subtle shadows
+- Small animations
+
+Avoid making it childish.
+
+Think:
+
+"private digital world made for two people."
+
+The UI must be mobile-first.
+
+---
+
+RESPONSIVENESS
+
+Primary target:
+
+Android phones.
+
+Support:
+
+320px
+360px
+375px
+390px
+414px
+430px
+
+Nothing should overflow.
+
+No overlapping elements.
+
+Buttons must be easy to tap.
+
+Text must remain readable.
+
+---
+
+PROJECT STRUCTURE
+
+Use a clean architecture.
+
+Suggested structure:
+
+src/
+components/
+pages/
+layouts/
+hooks/
+services/
+firebase/
+data/
+types/
+utils/
+assets/
+
+Separate Firebase logic from UI components.
+
+Create reusable components.
+
+Keep types centralized.
+
+---
+
+FIRST MILESTONE
+
+Implement the following completely before moving on:
+
+1. Authentication
+2. Two-user authorization
+3. Home dashboard
+4. Real-time private chat
+5. Shared photo upload
+6. Shared memories
+7. Firebase Storage
+8. Firestore synchronization
+9. Owner management interface
+10. Mobile-first UI
+
+Run the application.
+
+Fix TypeScript errors.
+
+Fix console errors.
+
+Test authentication.
+
+Test sending a message.
+
+Test receiving a message.
+
+Test uploading a photo.
+
+Test that uploaded content appears for the second user.
+
+Do not stop at mock data.
+
+Use real Firebase integration.
+
+If Firebase credentials are not yet available, create the complete integration structure and clearly identify the environment variables/configuration that I need to provide, but keep the rest of the application functional.
+
+Do not ask unnecessary questions. Make sensible decisions and build the first working version.

@@ -1,0 +1,1 @@
+- [Cloud adapter first build](cloud-adapter-first-build.md) — keep local persistence usable and visibly separate until the requested cloud provider is configured.

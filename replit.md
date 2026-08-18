@@ -1,15 +1,16 @@
-# [Project name]
+# Private World
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+An Android-first private digital space for two people to keep messages, memories, photos, and meaningful moments together.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/private-world run dev` — run the Expo mobile app
+- `pnpm --filter @workspace/api-server run dev` — run the API server
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Optional Firebase env vars: `EXPO_PUBLIC_FIREBASE_API_KEY`, `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`, `EXPO_PUBLIC_FIREBASE_PROJECT_ID`, `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET`, `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, and `EXPO_PUBLIC_FIREBASE_APP_ID`
 
 ## Stack
 
@@ -22,23 +23,31 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/private-world/app/index.tsx` — mobile app entry route
+- `artifacts/private-world/components/PrivateWorldApp.tsx` — mobile-first screens and interaction surface
+- `artifacts/private-world/context/AppContext.tsx` — two-user session, content models, and persistent local content
+- `artifacts/private-world/services/firebase.ts` — Firebase configuration boundary
+- `artifacts/private-world/constants/colors.ts` — shared romantic palette
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The first build uses a content-driven context model with AsyncStorage persistence so the app remains usable before Firebase configuration is supplied.
+- Firebase configuration is read only from Expo public environment variables and kept behind a service boundary for a later cloud adapter.
+- The mobile shell uses a compact top navigation so Android phone users can move between Home, Chat, Memories, and Gallery without a dense desktop layout.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+Private World supports two authorized preview accounts, persistent sign-in for the current session, local shared messages, memory creation, owner-only memory deletion, photo selection, a gallery, a timeline, and a personalized home dashboard.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Keep the app private, warm, premium, personal, and mobile-first.
+- Avoid childish visual treatment; use soft romantic color and restrained animation.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Firebase client configuration is not present yet, so the app visibly runs in Private preview mode and persists content locally.
+- The two preview accounts are `owner@private.world` / `owner123` and `mira@private.world` / `mira123`; replace this preview adapter when Firebase Auth is connected.
 
 ## Pointers
 

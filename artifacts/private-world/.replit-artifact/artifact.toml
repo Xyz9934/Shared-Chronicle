@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "Private World"
+description = "An Android-first private digital space for two people to share messages, memories, photos, letters, and music with secure cloud synchronization."
+version = "1.0.0"
+id = "artifacts/private-world"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 19978
+
+[services.development]
+run = "pnpm --filter @workspace/private-world run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/private-world", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/private-world", "run", "serve" ]
+
+[services.env]
+PORT = "19978"
+BASE_PATH = "/"
