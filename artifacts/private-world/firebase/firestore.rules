@@ -1,0 +1,71 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasPrivateProfile() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['OWNER', 'USER'];
+    }
+
+    function isOwner() {
+      return hasPrivateProfile()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'OWNER';
+    }
+
+    function isCreator() {
+      return hasPrivateProfile() && resource.data.creatorId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read: if hasPrivateProfile();
+      allow create: if false;
+      allow update: if isOwner() || (hasPrivateProfile() && request.auth.uid == userId
+        && request.resource.data.role == resource.data.role);
+      allow delete: if false;
+    }
+
+    match /settings/{settingId} {
+      allow read: if hasPrivateProfile();
+      allow write: if isOwner();
+    }
+
+    match /messages/{messageId} {
+      allow read, create: if hasPrivateProfile();
+      allow update: if hasPrivateProfile()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
+      allow delete: if isOwner();
+    }
+
+    match /memories/{memoryId} {
+      allow read, create: if hasPrivateProfile();
+      allow update, delete: if isOwner() || isCreator();
+    }
+
+    match /photos/{photoId} {
+      allow read, create: if hasPrivateProfile();
+      allow update, delete: if isOwner();
+    }
+
+    match /timeline/{entryId} {
+      allow read, create: if hasPrivateProfile();
+      allow update, delete: if isOwner() || isCreator();
+    }
+
+    match /letters/{letterId} {
+      allow read, create: if hasPrivateProfile();
+      allow update: if hasPrivateProfile()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['openedBy']);
+      allow delete: if isOwner();
+    }
+
+    match /songs/{songId} {
+      allow read, create: if hasPrivateProfile();
+      allow update, delete: if isOwner();
+    }
+  }
+}
