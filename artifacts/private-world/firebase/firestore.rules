@@ -22,8 +22,17 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if hasPrivateProfile();
-      allow create: if false;
+      // Users need to read their own document while deciding whether the
+      // first-login profile must be created.
+      allow read: if hasPrivateProfile() || (signedIn() && request.auth.uid == userId);
+      // A first-time Firebase account may create only its own, minimal USER
+      // profile. OWNER profiles must still be provisioned administratively.
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == 'USER'
+        && request.resource.data.keys().hasOnly(['role', 'email'])
+        && (!request.resource.data.keys().hasAny(['email'])
+          || request.resource.data.email is string);
       allow update: if isOwner() || (hasPrivateProfile() && request.auth.uid == userId
         && request.resource.data.role == resource.data.role);
       allow delete: if false;
