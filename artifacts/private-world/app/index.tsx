@@ -1,6 +1,6 @@
 import React from 'react';
-import PrivateWorldApp from '@/components/PrivateWorldApp';
+import CloudPrivateWorldApp from '@/components/CloudPrivateWorldApp';
 
 export default function Index() {
-  return <PrivateWorldApp />;
+  return <CloudPrivateWorldApp />;
 }

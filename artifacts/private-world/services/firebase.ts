@@ -1,3 +1,4 @@
+```ts
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
   getAuth,
@@ -38,7 +39,9 @@ export const firebaseConfig: FirebaseConfig = {
 
 export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
 
-export const syncMode = isFirebaseConfigured ? 'Firebase cloud sync' : 'Private preview mode';
+export const syncMode = isFirebaseConfigured
+  ? 'Firebase cloud sync'
+  : 'Private preview mode';
 
 export const firebaseApp = isFirebaseConfigured
   ? getApps().length
@@ -47,39 +50,55 @@ export const firebaseApp = isFirebaseConfigured
   : null;
 
 let firebaseAuth: Auth | null = null;
+
 if (firebaseApp) {
   // Firebase 12 selects its React Native Auth implementation from the
-  // `firebase/auth` export itself. The former `firebase/auth/react-native`
-  // entry point no longer exists and prevents Metro from loading the app.
+  // `firebase/auth` export itself. The former React Native subpath imports
+  // are not used because they are unavailable in Firebase 12.17.1.
   firebaseAuth = getAuth(firebaseApp);
 }
 
 export const auth = firebaseAuth;
-export const db: Firestore | null = firebaseApp ? getFirestore(firebaseApp) : null;
-export const storage: FirebaseStorage | null = firebaseApp ? getStorage(firebaseApp) : null;
+
+export const db: Firestore | null = firebaseApp
+  ? getFirestore(firebaseApp)
+  : null;
+
+export const storage: FirebaseStorage | null = firebaseApp
+  ? getStorage(firebaseApp)
+  : null;
 
 /**
- * Returns a user's private-space profile, creating a minimal USER profile for
- * a newly authenticated Firebase account. The transaction makes the
- * existence check and creation atomic, and deliberately leaves existing
- * profiles (including OWNER profiles) untouched.
+ * Returns a user's private-space profile, creating a minimal USER profile
+ * for a newly authenticated Firebase account.
+ *
+ * The transaction makes the existence check and creation atomic, and
+ * deliberately leaves existing profiles (including OWNER profiles) untouched.
  */
-export async function ensureUserProfile(firebaseUser: FirebaseUser): Promise<DocumentData> {
-  if (!db) throw new Error('Firebase is not configured.');
+export async function ensureUserProfile(
+  firebaseUser: FirebaseUser,
+): Promise<DocumentData> {
+  if (!db) {
+    throw new Error('Firebase is not configured.');
+  }
 
   const profileRef = doc(db, 'users', firebaseUser.uid);
+
   return runTransaction(db, async (transaction) => {
     const profile = await transaction.get(profileRef);
-    if (profile.exists()) return profile.data();
 
-    transaction.set(profileRef, {
-      role: 'USER',
-      ...(firebaseUser.email ? { email: firebaseUser.email } : {}),
-    });
+    if (profile.exists()) {
+      return profile.data();
+    }
 
-    return {
+    const profileData = {
       role: 'USER',
       ...(firebaseUser.email ? { email: firebaseUser.email } : {}),
     };
+
+    transaction.set(profileRef, profileData);
+
+    return profileData;
   });
 }
+```

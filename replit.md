@@ -10,7 +10,7 @@ An Android-first private digital space for two people to keep messages, memories
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
 - `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Optional Firebase env vars: `EXPO_PUBLIC_FIREBASE_API_KEY`, `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`, `EXPO_PUBLIC_FIREBASE_PROJECT_ID`, `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET`, `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, and `EXPO_PUBLIC_FIREBASE_APP_ID`
+- Required Private World Firebase env vars: `EXPO_PUBLIC_FIREBASE_API_KEY`, `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN`, `EXPO_PUBLIC_FIREBASE_PROJECT_ID`, `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET`, `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, and `EXPO_PUBLIC_FIREBASE_APP_ID`
 
 ## Stack
 
@@ -24,20 +24,21 @@ An Android-first private digital space for two people to keep messages, memories
 ## Where things live
 
 - `artifacts/private-world/app/index.tsx` — mobile app entry route
-- `artifacts/private-world/components/PrivateWorldApp.tsx` — mobile-first screens and interaction surface
-- `artifacts/private-world/context/AppContext.tsx` — two-user session, content models, and persistent local content
+- `artifacts/private-world/components/CloudPrivateWorldApp.tsx` — Firebase-backed mobile screens and interaction surface
+- `artifacts/private-world/context/CloudContext.tsx` — Firebase Auth, Firestore listeners, Storage uploads, and cloud mutations
+- `artifacts/private-world/firebase/` — Firestore and Storage rules plus one-time setup notes
 - `artifacts/private-world/services/firebase.ts` — Firebase configuration boundary
 - `artifacts/private-world/constants/colors.ts` — shared romantic palette
 
 ## Architecture decisions
 
-- The first build uses a content-driven context model with AsyncStorage persistence so the app remains usable before Firebase configuration is supplied.
-- Firebase configuration is read only from Expo public environment variables and kept behind a service boundary for a later cloud adapter.
-- The mobile shell uses a compact top navigation so Android phone users can move between Home, Chat, Memories, and Gallery without a dense desktop layout.
+- The original local context and screens remain in the repository as Part 1 reference, but the active entry route uses `CloudProvider` and requires a verified Firebase session.
+- Firebase configuration is read only from Expo public environment variables and kept behind a service boundary. Firestore listeners provide real-time synchronization and Storage holds uploaded media.
+- The mobile shell uses a compact top navigation so Android phone users can move between Home, Chat, Memories, Gallery, Timeline, Letters, and Music without a dense desktop layout.
 
 ## Product
 
-Private World supports two authorized preview accounts, persistent sign-in for the current session, local shared messages, memory creation, owner-only memory deletion, photo selection, a gallery, a timeline, and a personalized home dashboard.
+Private World supports exactly two Firebase-authorized people, persistent Firebase sign-in, real-time chat with read state, cloud memories and gallery photos, editable timeline entries, letters with envelope reveal, Storage-backed music with playback, secret reveal content, and owner customization.
 
 ## User preferences
 
@@ -46,8 +47,8 @@ Private World supports two authorized preview accounts, persistent sign-in for t
 
 ## Gotchas
 
-- Firebase client configuration is not present yet, so the app visibly runs in Private preview mode and persists content locally.
-- The two preview accounts are `owner@private.world` / `owner123` and `mira@private.world` / `mira123`; replace this preview adapter when Firebase Auth is connected.
+- Firebase is intentionally fail-closed: the active app does not use demo accounts or local fallback data. Configure all six public Firebase variables, create the two Auth users, seed their `users/{uid}` allowlist documents, and deploy both rule files before login can succeed.
+- Push notifications are represented in-app through live unread badges and read receipts; a provider such as OneSignal can be connected later if device push delivery is required.
 
 ## Pointers
 
