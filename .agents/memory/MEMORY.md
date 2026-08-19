@@ -1,1 +1,2 @@
 - [Cloud adapter first build](cloud-adapter-first-build.md) — keep local persistence usable and visibly separate until the requested cloud provider is configured.
+- [Firebase 12 React Native auth](firebase-12-react-native-auth.md) — RN persistence needs the underlying Firebase auth RN entry because the public subpath is not exported.

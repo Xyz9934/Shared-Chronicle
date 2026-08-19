@@ -5,7 +5,10 @@ import {
   initializeAuth,
   type Auth,
 } from 'firebase/auth';
-import { getReactNativePersistence } from 'firebase/auth/react-native';
+// Firebase 12 exposes this implementation through the RN build, but its
+// package export omits the subpath from TypeScript's public declarations.
+// @ts-expect-error The Expo/Metro resolver can load the RN entry at runtime.
+import { getReactNativePersistence } from '@firebase/auth/dist/rn/index.js';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 

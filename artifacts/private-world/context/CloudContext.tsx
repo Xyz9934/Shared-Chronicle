@@ -10,6 +10,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   type DocumentData,
   type Timestamp,
@@ -131,6 +132,7 @@ type CloudContextValue = {
   deleteMemory: (id: string) => Promise<void>;
   addPhoto: (input: { uri: string; caption: string; date: string }, onProgress?: (value: number) => void) => Promise<void>;
   addTimeline: (input: { title: string; description: string; date: string; photoUri?: string }, onProgress?: (value: number) => void) => Promise<void>;
+  updateTimeline: (id: string, input: Partial<Pick<CloudTimelineEntry, 'title' | 'description' | 'date'>>) => Promise<void>;
   deleteTimeline: (id: string) => Promise<void>;
   addLetter: (input: { title: string; message: string; date: string; photoUri?: string }, onProgress?: (value: number) => void) => Promise<void>;
   markLetterOpened: (id: string) => Promise<void>;
@@ -370,6 +372,11 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     await deleteDoc(doc(firestore, 'timeline', id));
   };
 
+  const updateTimeline = async (id: string, input: Partial<Pick<CloudTimelineEntry, 'title' | 'description' | 'date'>>) => {
+    const { firestore } = requireCloud();
+    await updateDoc(doc(firestore, 'timeline', id), input);
+  };
+
   const addLetter = async (input: { title: string; message: string; date: string; photoUri?: string }, onProgress?: (value: number) => void) => {
     const { user, firestore } = requireCloud();
     const photoUrl = input.photoUri ? await uploadAsset(input.photoUri, `letters/${user.id}/${Date.now()}`, onProgress) : '';
@@ -391,12 +398,13 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
 
   const updateSettings = async (input: Partial<Omit<CloudSettings, 'id'>>) => {
     const { firestore } = requireCloud();
-    await updateDoc(doc(firestore, 'settings', 'space'), input);
+    await setDoc(doc(firestore, 'settings', 'space'), input, { merge: true });
   };
 
   const updateProfile = async (input: Partial<Pick<CloudUser, 'name' | 'photoUrl'>>) => {
     const { user, firestore } = requireCloud();
     await updateDoc(doc(firestore, 'users', user.id), input);
+    setCurrentUser((current) => current ? { ...current, ...input, initials: (input.name ?? current.name).slice(0, 1).toUpperCase() } : current);
   };
 
   const value = useMemo<CloudContextValue>(() => ({
@@ -420,6 +428,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     deleteMemory,
     addPhoto,
     addTimeline,
+    updateTimeline,
     deleteTimeline,
     addLetter,
     markLetterOpened,

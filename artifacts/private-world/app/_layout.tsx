@@ -13,7 +13,7 @@ import {
 } from '@expo-google-fonts/inter';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { AppProvider } from '@/context/AppContext';
+import { CloudProvider } from '@/context/CloudContext';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -48,13 +48,13 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
-          <AppProvider>
+          <CloudProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>
               <KeyboardProvider>
                 <RootLayoutNav />
               </KeyboardProvider>
             </GestureHandlerRootView>
-          </AppProvider>
+          </CloudProvider>
         </QueryClientProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
