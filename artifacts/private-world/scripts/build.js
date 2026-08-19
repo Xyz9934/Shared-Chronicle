@@ -229,7 +229,11 @@ async function downloadBundle(platform, timestamp) {
     'expo-router',
     'entry',
   );
-  const bundlePath = path.relative(workspaceRoot, entryPath);
+  // Use POSIX-style path separators for URLs so Metro accepts the request
+  let bundlePath = path.relative(workspaceRoot, entryPath);
+  if (path.sep === '\\') {
+    bundlePath = bundlePath.replace(/\\\\/g, '/');
+  }
   const url = new URL(`http://localhost:8081/${bundlePath}.bundle`);
   url.searchParams.set('platform', platform);
   url.searchParams.set('dev', 'false');
