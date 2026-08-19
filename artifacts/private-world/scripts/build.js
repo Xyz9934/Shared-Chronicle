@@ -197,7 +197,14 @@ async function downloadFile(url, outputPath) {
     const response = await fetch(url, { signal: controller.signal });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+      } catch {
+        bodyText = '<unable to read response body>';
+      }
+      const snippet = bodyText.length > 2000 ? bodyText.slice(0, 2000) + '\n...[truncated]' : bodyText;
+      throw new Error(`HTTP ${response.status}: ${snippet}`);
     }
 
     const file = fs.createWriteStream(outputPath);
@@ -269,7 +276,14 @@ async function downloadManifest(platform) {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      let bodyText = '';
+      try {
+        bodyText = await response.text();
+      } catch {
+        bodyText = '<unable to read response body>';
+      }
+      const snippet = bodyText.length > 2000 ? bodyText.slice(0, 2000) + '\n...[truncated]' : bodyText;
+      throw new Error(`HTTP ${response.status}: ${snippet}`);
     }
 
     const manifest = await response.json();
