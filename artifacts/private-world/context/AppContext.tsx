@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import { ensureUserProfile, isFirebaseConfigured, auth, db } from '@/services/firebase';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, signInWithCustomToken, signOut, type User as FirebaseUser } from 'firebase/auth';
 import {
   collection,
   query,
@@ -68,7 +68,7 @@ type AppContextValue = {
   photos: Photo[];
   isLoading: boolean;
   isFirebaseConfigured: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   sendMessage: (text: string) => Promise<void>;
   addMemory: (input: Pick<Memory, 'title' | 'description' | 'date' | 'imageKey' | 'imageUri'>) => Promise<void>;
@@ -214,28 +214,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     await persist(next);
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (username: string, password: string) => {
     if (isFirebaseConfigured && auth) {
       try {
-        const res = await signInWithEmailAndPassword(auth, email.trim(), password);
-        // Do not expose an authenticated session until its Firestore profile
-        // has been verified or created. This also preserves an existing OWNER.
-        const profile = await ensureUserProfile(res.user);
-        const nextUser = appUserFromFirebase(res.user, profile);
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ username: username.trim(), password }),
+        });
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (!data?.token) return false;
+        const signInRes = await signInWithCustomToken(auth, data.token);
+        const profile = await ensureUserProfile(signInRes.user);
+        const nextUser = appUserFromFirebase(signInRes.user, profile);
         if (!nextUser) throw new Error('The user profile has an invalid role.');
         setCurrentUser(nextUser);
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         return true;
       } catch {
-        await signOut(auth).catch(() => {
-          /* ignore */
-        });
+        await signOut(auth).catch(() => { /* ignore */ });
         return false;
       }
     }
 
     const match = demoUsers.find(
-      (candidate) => candidate.email.toLowerCase() === email.trim().toLowerCase() && candidate.password === password,
+      (candidate) => candidate.email.toLowerCase() === username.trim().toLowerCase() && candidate.password === password,
     );
     if (!match) return false;
     const { password: _password, ...safeUser } = match;

@@ -44,7 +44,15 @@ service cloud.firestore {
     }
 
     match /messages/{messageId} {
-      allow read, create: if hasPrivateProfile();
+      // Only authenticated users with a private profile may create messages,
+      // and the senderId must match the authenticated UID so clients cannot
+      // impersonate other users. Basic validation of fields is enforced.
+      allow read: if hasPrivateProfile();
+      allow create: if hasPrivateProfile()
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.senderName is string
+        && request.resource.data.text is string
+        && request.resource.data.readBy is list;
       allow update: if hasPrivateProfile()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
       allow delete: if isOwner();

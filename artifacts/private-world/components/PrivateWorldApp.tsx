@@ -102,7 +102,7 @@ function PrimaryButton({
 
 function LoginScreen() {
   const { login } = useApp();
-  const [email, setEmail] = useState('owner@private.world');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('owner123');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -111,7 +111,7 @@ function LoginScreen() {
     Keyboard.dismiss();
     setError('');
     setBusy(true);
-    const valid = await login(email, password);
+    const valid = await login(username, password);
     setBusy(false);
     if (!valid) setError('That login does not match one of the two private accounts.');
   };
@@ -126,16 +126,15 @@ function LoginScreen() {
         <Text style={styles.loginSubtitle}>A quiet place for the words, photos, and moments that belong to you both.</Text>
 
         <View style={styles.loginCard}>
-          <Text style={styles.fieldLabel}>Email</Text>
+          <Text style={styles.fieldLabel}>Username</Text>
           <TextInput
             autoCapitalize="none"
             autoCorrect={false}
-            keyboardType="email-address"
-            onChangeText={setEmail}
-            placeholder="you@example.com"
+            onChangeText={setUsername}
+            placeholder="tommy or jerry"
             placeholderTextColor={theme.mutedForeground}
             style={styles.input}
-            value={email}
+            value={username}
           />
           <Text style={[styles.fieldLabel, styles.passwordLabel]}>Password</Text>
           <TextInput

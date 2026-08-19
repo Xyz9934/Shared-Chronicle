@@ -61,5 +61,6 @@
     "expo-av": "~16.0.8",
     "expo-document-picker": "~14.0.8",
     "firebase": "^12.17.1"
+    ,"firebase-admin": "^11.11.0"
   }
 }

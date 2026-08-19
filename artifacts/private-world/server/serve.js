@@ -126,6 +126,32 @@ function serveStaticFile(urlPath, res) {
 const landingPageTemplate = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 const appName = getAppName();
 
+// Lightweight auth endpoint to exchange a server-side username/password for a
+// Firebase custom token. The server uses service account credentials provided
+// via the FIREBASE_SERVICE_ACCOUNT_KEY environment variable (JSON string) or
+// GOOGLE_APPLICATION_CREDENTIALS. The endpoint intentionally does not log
+// sensitive values and only accepts the two allowed usernames.
+let adminInitialized = false;
+let admin;
+try {
+  // Lazy require so environments that do not use the server don't need the
+  // dependency installed at runtime for static serving.
+  admin = require('firebase-admin');
+  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (serviceAccount) {
+    const parsed = JSON.parse(serviceAccount);
+    admin.initializeApp({ credential: admin.credential.cert(parsed) });
+    adminInitialized = true;
+  } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    admin.initializeApp();
+    adminInitialized = true;
+  }
+} catch (e) {
+  // If firebase-admin is not available or initialization failed, the server
+  // will continue to serve static files but authentication will be disabled.
+  adminInitialized = false;
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
   let pathname = url.pathname;
@@ -143,6 +169,62 @@ const server = http.createServer((req, res) => {
     if (pathname === '/') {
       return serveLandingPage(req, res, landingPageTemplate, appName);
     }
+  }
+
+  // Auth endpoint: POST /auth/login
+  if (pathname === '/auth/login' && req.method === 'POST') {
+    // Read JSON body
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const username = typeof payload.username === 'string' ? payload.username.toLowerCase().trim() : '';
+        const password = typeof payload.password === 'string' ? payload.password : '';
+
+        if (!adminInitialized) {
+          res.writeHead(500, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Server authentication not configured.' }));
+          return;
+        }
+
+        // Only allow the two configured users.
+        const allowed = { tommy: { envPass: process.env.TOMMY_PASSWORD, uid: process.env.TOMMY_UID }, jerry: { envPass: process.env.JERRY_PASSWORD, uid: process.env.JERRY_UID } };
+        const entry = allowed[username];
+        if (!entry || !entry.envPass || !entry.uid) {
+          res.writeHead(401, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Unauthorized' }));
+          return;
+        }
+
+        // Constant-time comparison to avoid leaking timing information.
+        const crypto = require('crypto');
+        const a = Buffer.from(String(password));
+        const b = Buffer.from(String(entry.envPass));
+        let ok = false;
+        try {
+          ok = a.length === b.length && crypto.timingSafeEqual(a, b);
+        } catch (e) {
+          ok = false;
+        }
+
+        if (!ok) {
+          res.writeHead(401, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Unauthorized' }));
+          return;
+        }
+
+        // Create a Firebase custom token for the mapped UID. Do NOT include
+        // the password or other secrets in the token payload or logs.
+        const token = await admin.auth().createCustomToken(entry.uid, { username });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ token }));
+      } catch (err) {
+        res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Authentication error' }));
+      }
+    });
+    return;
   }
 
   serveStaticFile(pathname, res);

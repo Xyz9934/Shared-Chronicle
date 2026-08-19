@@ -114,7 +114,7 @@ function Empty({ icon, title, body }: { icon: Icon; title: string; body: string 
 
 function Login() {
   const { login, error, isFirebaseConfigured } = useCloudApp();
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState('');
@@ -122,7 +122,7 @@ function Login() {
     Keyboard.dismiss();
     setLocalError('');
     setBusy(true);
-    const accepted = await login(email, password);
+    const accepted = await login(username, password);
     setBusy(false);
     if (!accepted) setLocalError('That login was not accepted. Only the two authorized accounts can enter.');
   };
@@ -135,7 +135,7 @@ function Login() {
         <Text style={styles.loginTitle}>Welcome back{'\n'}to your little world.</Text>
         <Text style={styles.loginSub}>A quiet place for the words, photos, and moments that belong to you both.</Text>
         <View style={styles.loginCard}>
-          <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" />
+          <Field label="Username" value={username} onChangeText={setUsername} placeholder="tommy or jerry" />
           <Field label="Password" value={password} onChangeText={setPassword} placeholder="Your private password" secureTextEntry />
           {!!(localError || error) && <Text style={styles.error}>{localError || error}</Text>}
           <Button title={busy ? 'Opening your space…' : 'Enter privately'} icon="arrow-right" onPress={() => void submit()} disabled={busy || !isFirebaseConfigured} />

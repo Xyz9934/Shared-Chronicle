@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import {
   onAuthStateChanged,
-  signInWithEmailAndPassword,
+  signInWithCustomToken,
   signOut,
   type User as FirebaseUser,
 } from 'firebase/auth';
@@ -122,7 +122,7 @@ type CloudContextValue = {
   isLoading: boolean;
   isFirebaseConfigured: boolean;
   error: string;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
   markMessageRead: (messageId: string) => Promise<void>;
@@ -288,16 +288,31 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     return { user: currentUser, firestore: db, files: storage };
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (username: string, password: string) => {
     if (!auth) {
       setError('Firebase is not configured for this app.');
       return false;
     }
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      // Exchange username/password for a Firebase custom token from the server.
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      if (!res.ok) {
+        setError('That login was not accepted. Only the two authorized accounts can enter.');
+        return false;
+      }
+      const data = await res.json();
+      if (!data?.token) {
+        setError('Authentication failed.');
+        return false;
+      }
+      await signInWithCustomToken(auth, data.token);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return true;
-    } catch {
+    } catch (err) {
       setError('That login was not accepted. Only the two authorized accounts can enter.');
       return false;
     }
