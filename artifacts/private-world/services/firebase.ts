@@ -1,11 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
   getAuth,
-  initializeAuth,
   type Auth,
 } from 'firebase/auth';
-import { getReactNativePersistence } from 'firebase/auth/react-native';
 import {
   doc,
   getFirestore,
@@ -51,13 +48,10 @@ export const firebaseApp = isFirebaseConfigured
 
 let firebaseAuth: Auth | null = null;
 if (firebaseApp) {
-  try {
-    firebaseAuth = initializeAuth(firebaseApp, {
-      persistence: getReactNativePersistence(AsyncStorage),
-    });
-  } catch {
-    firebaseAuth = getAuth(firebaseApp);
-  }
+  // Firebase 12 selects its React Native Auth implementation from the
+  // `firebase/auth` export itself. The former `firebase/auth/react-native`
+  // entry point no longer exists and prevents Metro from loading the app.
+  firebaseAuth = getAuth(firebaseApp);
 }
 
 export const auth = firebaseAuth;
