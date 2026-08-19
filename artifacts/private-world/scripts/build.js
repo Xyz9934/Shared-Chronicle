@@ -149,7 +149,8 @@ async function startMetro(expoPublicDomain, expoPublicReplId) {
   }
 
   metroProcess = spawn(
-    'pnpm',
+    // On Windows, the pnpm executable may be pnpm.cmd; choose appropriately
+    process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
     ['exec', 'expo', 'start', '--no-dev', '--minify', '--localhost'],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
