@@ -5,7 +5,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -21,7 +20,7 @@ import {
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { auth, db, isFirebaseConfigured, storage } from '@/services/firebase';
+import { auth, db, ensureUserProfile, isFirebaseConfigured, storage } from '@/services/firebase';
 
 export type CloudRole = 'OWNER' | 'USER';
 
@@ -199,7 +198,6 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
       return undefined;
     }
     const currentAuth = auth;
-    const currentDb = db;
     return onAuthStateChanged(currentAuth, async (firebaseUser) => {
       setError('');
       if (!firebaseUser) {
@@ -208,8 +206,10 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       try {
-        const profile = await getDoc(doc(currentDb, 'users', firebaseUser.uid));
-        const nextUser = profile.exists() ? userFromSnapshot(firebaseUser, profile.data()) : null;
+        // Provision a missing profile before verifying its role. The shared
+        // helper never mutates an existing USER or OWNER document.
+        const profile = await ensureUserProfile(firebaseUser);
+        const nextUser = userFromSnapshot(firebaseUser, profile);
         if (!nextUser) {
           await signOut(currentAuth);
           setCurrentUser(null);

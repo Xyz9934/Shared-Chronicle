@@ -181,8 +181,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isFirebaseConfigured || !auth) return undefined;
 
+    const firebaseAuth = auth;
     setIsLoading(true);
-    return onAuthStateChanged(auth, (firebaseUser) => {
+    return onAuthStateChanged(firebaseAuth, (firebaseUser) => {
       void (async () => {
         if (!firebaseUser) {
           setCurrentUser(null);
@@ -198,7 +199,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setCurrentUser(nextUser);
         } catch {
           setCurrentUser(null);
-          await signOut(auth).catch(() => {
+          await signOut(firebaseAuth).catch(() => {
             /* ignore */
           });
         } finally {
