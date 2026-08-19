@@ -6,7 +6,14 @@ import {
   type Auth,
 } from 'firebase/auth';
 import { getReactNativePersistence } from 'firebase/auth/react-native';
-import { getFirestore, type Firestore } from 'firebase/firestore';
+import {
+  doc,
+  getFirestore,
+  runTransaction,
+  type DocumentData,
+  type Firestore,
+} from 'firebase/firestore';
+import type { User as FirebaseUser } from 'firebase/auth';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 export type FirebaseConfig = {
@@ -56,3 +63,29 @@ if (firebaseApp) {
 export const auth = firebaseAuth;
 export const db: Firestore | null = firebaseApp ? getFirestore(firebaseApp) : null;
 export const storage: FirebaseStorage | null = firebaseApp ? getStorage(firebaseApp) : null;
+
+/**
+ * Returns a user's private-space profile, creating a minimal USER profile for
+ * a newly authenticated Firebase account. The transaction makes the
+ * existence check and creation atomic, and deliberately leaves existing
+ * profiles (including OWNER profiles) untouched.
+ */
+export async function ensureUserProfile(firebaseUser: FirebaseUser): Promise<DocumentData> {
+  if (!db) throw new Error('Firebase is not configured.');
+
+  const profileRef = doc(db, 'users', firebaseUser.uid);
+  return runTransaction(db, async (transaction) => {
+    const profile = await transaction.get(profileRef);
+    if (profile.exists()) return profile.data();
+
+    transaction.set(profileRef, {
+      role: 'USER',
+      ...(firebaseUser.email ? { email: firebaseUser.email } : {}),
+    });
+
+    return {
+      role: 'USER',
+      ...(firebaseUser.email ? { email: firebaseUser.email } : {}),
+    };
+  });
+}

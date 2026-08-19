@@ -1,7 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import * as Haptics from 'expo-haptics';
-import { isFirebaseConfigured } from '@/services/firebase';
+import { ensureUserProfile, isFirebaseConfigured, auth, db } from '@/services/firebase';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User as FirebaseUser } from 'firebase/auth';
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  serverTimestamp,
+  Firestore,
+  DocumentData,
+} from 'firebase/firestore';
 
 export type Role = 'OWNER' | 'USER';
 export type AppSection = 'home' | 'chat' | 'memories' | 'gallery';
@@ -132,6 +143,20 @@ const persist = async (data: PersistedData) => {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 };
 
+const appUserFromFirebase = (user: FirebaseUser, profile: DocumentData): AppUser | null => {
+  if (profile.role !== 'OWNER' && profile.role !== 'USER') return null;
+
+  const email = user.email ?? '';
+  const name = user.displayName?.trim() || email.split('@')[0] || 'User';
+  return {
+    id: user.uid,
+    name,
+    email,
+    role: profile.role,
+    initials: name[0]?.toUpperCase() ?? 'U',
+  };
+};
+
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [data, setData] = useState<PersistedData>(starterData);
@@ -153,12 +178,61 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     void restore();
   }, []);
 
+  useEffect(() => {
+    if (!isFirebaseConfigured || !auth) return undefined;
+
+    setIsLoading(true);
+    return onAuthStateChanged(auth, (firebaseUser) => {
+      void (async () => {
+        if (!firebaseUser) {
+          setCurrentUser(null);
+          setIsLoading(false);
+          return;
+        }
+
+        try {
+          // This completes before currentUser is exposed to private features.
+          const profile = await ensureUserProfile(firebaseUser);
+          const nextUser = appUserFromFirebase(firebaseUser, profile);
+          if (!nextUser) throw new Error('The user profile has an invalid role.');
+          setCurrentUser(nextUser);
+        } catch {
+          setCurrentUser(null);
+          await signOut(auth).catch(() => {
+            /* ignore */
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      })();
+    });
+  }, []);
+
   const updateData = async (next: PersistedData) => {
     setData(next);
     await persist(next);
   };
 
   const login = async (email: string, password: string) => {
+    if (isFirebaseConfigured && auth) {
+      try {
+        const res = await signInWithEmailAndPassword(auth, email.trim(), password);
+        // Do not expose an authenticated session until its Firestore profile
+        // has been verified or created. This also preserves an existing OWNER.
+        const profile = await ensureUserProfile(res.user);
+        const nextUser = appUserFromFirebase(res.user, profile);
+        if (!nextUser) throw new Error('The user profile has an invalid role.');
+        setCurrentUser(nextUser);
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return true;
+      } catch {
+        await signOut(auth).catch(() => {
+          /* ignore */
+        });
+        return false;
+      }
+    }
+
     const match = demoUsers.find(
       (candidate) => candidate.email.toLowerCase() === email.trim().toLowerCase() && candidate.password === password,
     );
@@ -170,11 +244,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
+    if (isFirebaseConfigured && auth) {
+      void signOut(auth).catch(() => {
+        /* ignore */
+      });
+    }
     setCurrentUser(null);
   };
 
   const sendMessage = async (text: string) => {
     if (!currentUser || !text.trim()) return;
+    if (isFirebaseConfigured && db) {
+      try {
+        await addDoc(collection(db as Firestore, 'private_world_messages'), {
+          text: text.trim(),
+          senderId: currentUser.id,
+          senderName: currentUser.name,
+          createdAt: serverTimestamp(),
+          read: true,
+        });
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return;
+      } catch {
+        // fallthrough to local
+      }
+    }
+
     const next: PersistedData = {
       ...data,
       messages: [
@@ -195,6 +290,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addMemory = async (input: Pick<Memory, 'title' | 'description' | 'date' | 'imageKey' | 'imageUri'>) => {
     if (!currentUser) return;
+    if (isFirebaseConfigured && db) {
+      try {
+        await addDoc(collection(db as Firestore, 'private_world_memories'), {
+          ...input,
+          creatorId: currentUser.id,
+          creatorName: currentUser.name,
+          createdAt: serverTimestamp(),
+        });
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return;
+      } catch {
+        // fall through to local
+      }
+    }
+
     const next: PersistedData = {
       ...data,
       memories: [
@@ -214,6 +324,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const addPhoto = async (input: Pick<Photo, 'uri' | 'caption' | 'date'>) => {
     if (!currentUser) return;
+    if (isFirebaseConfigured && db) {
+      try {
+        await addDoc(collection(db as Firestore, 'private_world_photos'), {
+          ...input,
+          uploadedBy: currentUser.name,
+          createdAt: serverTimestamp(),
+        });
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        return;
+      } catch {
+        // fallthrough to local
+      }
+    }
+
     const next: PersistedData = {
       ...data,
       photos: [
