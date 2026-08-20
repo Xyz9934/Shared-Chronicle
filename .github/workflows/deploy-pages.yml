@@ -45,11 +45,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
       - name: Export Expo web build
         run: pnpm --filter @workspace/private-world run web:build
 
       - name: Add GitHub Pages SPA fallback
         run: cp artifacts/private-world/dist/index.html artifacts/private-world/dist/404.html
+
+      - name: Verify web artifact safety
+        shell: bash
+        run: |
+          test -f artifacts/private-world/dist/index.html
+          test -f artifacts/private-world/dist/404.html
+          test -n "$(find artifacts/private-world/dist -type f -name '*.js' -print -quit)"
+          if grep -R -E 'firebase-admin|FIREBASE_SERVICE_ACCOUNT_KEY|GOOGLE_APPLICATION_CREDENTIALS|private_key' artifacts/private-world/dist; then
+            echo 'Server credentials detected in the web artifact.'
+            exit 1
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
