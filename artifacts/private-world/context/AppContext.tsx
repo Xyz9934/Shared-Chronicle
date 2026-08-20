@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import * as Haptics from 'expo-haptics';
+import { getAuthApiUrl } from '@/context/CloudContext';
 import { ensureUserProfile, isFirebaseConfigured, auth, db } from '@/services/firebase';
 import { onAuthStateChanged, signInWithCustomToken, signOut, type User as FirebaseUser } from 'firebase/auth';
 import {
@@ -217,7 +218,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const login = async (username: string, password: string) => {
     if (isFirebaseConfigured && auth) {
       try {
-        const res = await fetch('/auth/login', {
+        const authApiUrl = getAuthApiUrl();
+        if (!authApiUrl) return false;
+        const res = await fetch(authApiUrl, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ username: username.trim(), password }),

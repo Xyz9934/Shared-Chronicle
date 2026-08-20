@@ -16,10 +16,11 @@ const path = require('path');
 const STATIC_ROOT = path.resolve(__dirname, '..', 'static-build');
 const TEMPLATE_PATH = path.resolve(__dirname, 'templates', 'landing-page.html');
 const basePath = (process.env.BASE_PATH || '/').replace(/\/+$/, '');
+const pagesOrigin = (process.env.PAGES_ORIGIN || '').trim();
 const authCorsHeaders = {
-  'access-control-allow-origin': process.env.PAGES_ORIGIN || '*',
   'access-control-allow-headers': 'content-type',
   'access-control-allow-methods': 'POST, OPTIONS',
+  ...(pagesOrigin ? { 'access-control-allow-origin': pagesOrigin } : {}),
 };
 
 const MIME_TYPES = {

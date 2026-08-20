@@ -25,8 +25,8 @@ import { auth, db, ensureUserProfile, isFirebaseConfigured, storage } from '@/se
 
 const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? '').trim().replace(/\/+$/, '');
 
-export function getAuthApiUrl() {
-  return authApiBaseUrl ? `${authApiBaseUrl}/auth/login` : '/auth/login';
+export function getAuthApiUrl(): string | null {
+  return authApiBaseUrl ? `${authApiBaseUrl}/auth/login` : null;
 }
 
 export type CloudRole = 'OWNER' | 'USER';
@@ -299,27 +299,49 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
       setError('Firebase is not configured for this app.');
       return false;
     }
+    const authApiUrl = getAuthApiUrl();
+    if (!authApiUrl) {
+      setError('Authentication service is not configured for this app.');
+      return false;
+    }
+
+    let res: Response;
     try {
       // Exchange username/password for a Firebase custom token from the server.
-      const res = await fetch(getAuthApiUrl(), {
+      res = await fetch(authApiUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ username: username.trim(), password }),
       });
-      if (!res.ok) {
-        setError('That login was not accepted. Only the two authorized accounts can enter.');
-        return false;
-      }
+    } catch {
+      setError('Unable to connect to the authentication service.');
+      return false;
+    }
+
+    if (res.status === 401) {
+      setError('Incorrect username or password, or the account is not authorized.');
+      return false;
+    }
+    if (res.status >= 500) {
+      setError('The authentication service is not configured correctly.');
+      return false;
+    }
+    if (!res.ok) {
+      setError('The authentication service rejected the login request.');
+      return false;
+    }
+
+    try {
       const data = await res.json();
       if (!data?.token) {
-        setError('Authentication failed.');
+        setError('The authentication service returned an invalid response.');
         return false;
       }
       await signInWithCustomToken(auth, data.token);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return true;
-    } catch (err) {
-      setError('That login was not accepted. Only the two authorized accounts can enter.');
+    } catch {
+      setError('Authentication could not be completed.');
       return false;
     }
   };
