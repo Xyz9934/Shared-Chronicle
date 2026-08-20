@@ -18,7 +18,8 @@
     },
     "android": {},
     "web": {
-      "favicon": "./assets/images/icon_2.png"
+      "favicon": "./assets/images/icon_2.png",
+      "output": "static"
     },
     "plugins": [
       [
@@ -31,6 +32,7 @@
       "expo-web-browser"
     ],
     "experiments": {
+      "baseUrl": "/Shared-Chronicle/",
       "typedRoutes": true,
       "reactCompiler": true
     }

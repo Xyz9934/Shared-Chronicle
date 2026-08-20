@@ -16,6 +16,11 @@ const path = require('path');
 const STATIC_ROOT = path.resolve(__dirname, '..', 'static-build');
 const TEMPLATE_PATH = path.resolve(__dirname, 'templates', 'landing-page.html');
 const basePath = (process.env.BASE_PATH || '/').replace(/\/+$/, '');
+const authCorsHeaders = {
+  'access-control-allow-origin': process.env.PAGES_ORIGIN || '*',
+  'access-control-allow-headers': 'content-type',
+  'access-control-allow-methods': 'POST, OPTIONS',
+};
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -172,6 +177,12 @@ const server = http.createServer((req, res) => {
   }
 
   // Auth endpoint: POST /auth/login
+  if (pathname === '/auth/login' && req.method === 'OPTIONS') {
+    res.writeHead(204, authCorsHeaders);
+    res.end();
+    return;
+  }
+
   if (pathname === '/auth/login' && req.method === 'POST') {
     // Read JSON body
     let body = '';
@@ -183,7 +194,7 @@ const server = http.createServer((req, res) => {
         const password = typeof payload.password === 'string' ? payload.password : '';
 
         if (!adminInitialized) {
-          res.writeHead(500, { 'content-type': 'application/json' });
+          res.writeHead(500, { 'content-type': 'application/json', ...authCorsHeaders });
           res.end(JSON.stringify({ error: 'Server authentication not configured.' }));
           return;
         }
@@ -192,7 +203,7 @@ const server = http.createServer((req, res) => {
         const allowed = { tommy: { envPass: process.env.TOMMY_PASSWORD, uid: process.env.TOMMY_UID }, jerry: { envPass: process.env.JERRY_PASSWORD, uid: process.env.JERRY_UID } };
         const entry = allowed[username];
         if (!entry || !entry.envPass || !entry.uid) {
-          res.writeHead(401, { 'content-type': 'application/json' });
+          res.writeHead(401, { 'content-type': 'application/json', ...authCorsHeaders });
           res.end(JSON.stringify({ error: 'Unauthorized' }));
           return;
         }
@@ -209,7 +220,7 @@ const server = http.createServer((req, res) => {
         }
 
         if (!ok) {
-          res.writeHead(401, { 'content-type': 'application/json' });
+          res.writeHead(401, { 'content-type': 'application/json', ...authCorsHeaders });
           res.end(JSON.stringify({ error: 'Unauthorized' }));
           return;
         }
@@ -217,10 +228,10 @@ const server = http.createServer((req, res) => {
         // Create a Firebase custom token for the mapped UID. Do NOT include
         // the password or other secrets in the token payload or logs.
         const token = await admin.auth().createCustomToken(entry.uid, { username });
-        res.writeHead(200, { 'content-type': 'application/json' });
+        res.writeHead(200, { 'content-type': 'application/json', ...authCorsHeaders });
         res.end(JSON.stringify({ token }));
       } catch (err) {
-        res.writeHead(500, { 'content-type': 'application/json' });
+        res.writeHead(500, { 'content-type': 'application/json', ...authCorsHeaders });
         res.end(JSON.stringify({ error: 'Authentication error' }));
       }
     });
