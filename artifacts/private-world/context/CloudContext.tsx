@@ -23,7 +23,11 @@ import {
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { auth, db, ensureUserProfile, isFirebaseConfigured, storage } from '@/services/firebase';
 
-const authApiUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? '').replace(/\/$/, '');
+const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? '').trim().replace(/\/+$/, '');
+
+export function getAuthApiUrl() {
+  return authApiBaseUrl ? `${authApiBaseUrl}/auth/login` : '/auth/login';
+}
 
 export type CloudRole = 'OWNER' | 'USER';
 
@@ -297,7 +301,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     }
     try {
       // Exchange username/password for a Firebase custom token from the server.
-      const res = await fetch(`${authApiUrl}/auth/login`, {
+      const res = await fetch(getAuthApiUrl(), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ username: username.trim(), password }),
