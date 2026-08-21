@@ -29,6 +29,30 @@ export function getAuthApiUrl(): string | null {
   return authApiBaseUrl ? `${authApiBaseUrl}/auth/login` : null;
 }
 
+const firebaseAuthErrorMessage = (code: string) => {
+  switch (code) {
+    case 'auth/invalid-custom-token':
+      return 'The authentication token was rejected by Firebase.';
+    case 'auth/custom-token-mismatch':
+      return 'The authentication service is connected to a different Firebase project.';
+    case 'auth/network-request-failed':
+      return 'Firebase could not be reached. Check your connection and try again.';
+    case 'auth/invalid-api-key':
+    case 'auth/api-key-not-valid':
+      return 'The Firebase web configuration is invalid.';
+    case 'auth/project-not-found':
+      return 'The configured Firebase project could not be found.';
+    default:
+      return 'Firebase authentication could not be completed.';
+  }
+};
+
+const firebaseAuthErrorCode = (error: unknown) => {
+  if (!error || typeof error !== 'object' || !('code' in error)) return '';
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : '';
+};
+
 export type CloudRole = 'OWNER' | 'USER';
 
 export type CloudUser = {
@@ -295,6 +319,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   };
 
   const login = async (username: string, password: string) => {
+    setError('');
     if (!auth) {
       setError('Firebase is not configured for this app.');
       return false;
@@ -331,19 +356,30 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
 
+    let data: { token?: unknown };
     try {
-      const data = await res.json();
-      if (!data?.token) {
-        setError('The authentication service returned an invalid response.');
-        return false;
-      }
-      await signInWithCustomToken(auth, data.token);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      return true;
+      data = await res.json();
     } catch {
-      setError('Authentication could not be completed.');
+      setError('The authentication service returned an invalid response.');
       return false;
     }
+
+    if (!data?.token || typeof data.token !== 'string') {
+      setError('The authentication service returned an invalid response.');
+      return false;
+    }
+
+    try {
+      await signInWithCustomToken(auth, data.token);
+    } catch (firebaseError) {
+      const code = firebaseAuthErrorCode(firebaseError);
+      if (code) console.warn(`[Firebase Auth] ${code}`);
+      setError(firebaseAuthErrorMessage(code));
+      return false;
+    }
+
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    return true;
   };
 
   const logout = async () => {
