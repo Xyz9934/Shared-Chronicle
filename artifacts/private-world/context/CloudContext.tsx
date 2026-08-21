@@ -26,6 +26,18 @@ import { auth, db, ensureUserProfile, isFirebaseConfigured, storage } from '@/se
 
 const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? 'https://shared-chronicle--faizaniqubal206.replit.app').trim().replace(/\/+$/, '');
 
+type NotificationPermissionState = 'default' | 'granted' | 'denied' | 'unsupported';
+type BrowserNotificationConstructor = {
+  permission: Exclude<NotificationPermissionState, 'unsupported'>;
+  requestPermission: () => Promise<Exclude<NotificationPermissionState, 'unsupported'>>;
+  new (title: string, options?: { body?: string; tag?: string }): unknown;
+};
+
+const getBrowserNotification = (): BrowserNotificationConstructor | null => {
+  if (typeof globalThis === 'undefined') return null;
+  return (globalThis as typeof globalThis & { Notification?: BrowserNotificationConstructor }).Notification ?? null;
+};
+
 export function getAuthApiUrl(): string {
   return `${authApiBaseUrl}/auth/login`;
 }
@@ -155,9 +167,11 @@ type CloudContextValue = {
   isFirebaseConfigured: boolean;
   error: string;
   notification: string;
+  notificationPermission: NotificationPermissionState;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   dismissNotification: () => void;
+  requestNotificationPermission: () => Promise<void>;
   sendMessage: (text: string) => Promise<void>;
   markMessageRead: (messageId: string) => Promise<void>;
   addMemory: (input: { title: string; description: string; date: string; photoUri?: string }, onProgress?: (value: number) => void) => Promise<void>;
@@ -227,8 +241,14 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [notification, setNotification] = useState('');
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState>('unsupported');
   const messageSnapshotReady = useRef(false);
   const knownMessageIds = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const browserNotification = getBrowserNotification();
+    if (browserNotification) setNotificationPermission(browserNotification.permission);
+  }, []);
 
   useEffect(() => {
     if (!auth || !db) {
@@ -297,6 +317,10 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
           const newestIncoming = incoming[incoming.length - 1];
           if (newestIncoming && !knownMessageIds.current.has(newestIncoming.id)) {
             setNotification(`${newestIncoming.senderName}: ${newestIncoming.text}`);
+            const browserNotification = getBrowserNotification();
+            if (browserNotification?.permission === 'granted') {
+              new browserNotification('Private World', { body: `${newestIncoming.senderName}: ${newestIncoming.text}`, tag: newestIncoming.id });
+            }
           }
         }
         messageSnapshotReady.current = true;
@@ -449,6 +473,16 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
 
   const dismissNotification = () => setNotification('');
 
+  const requestNotificationPermission = async () => {
+    const browserNotification = getBrowserNotification();
+    if (!browserNotification) {
+      setNotificationPermission('unsupported');
+      return;
+    }
+    const permission = await browserNotification.requestPermission();
+    setNotificationPermission(permission);
+  };
+
   const addMemory = async (input: { title: string; description: string; date: string; photoUri?: string }, onProgress?: (value: number) => void) => {
     const { user, firestore } = requireCloud();
     const photoUrl = input.photoUri ? await uploadAsset(input.photoUri, `memories/${user.id}/${Date.now()}`, onProgress) : '';
@@ -530,9 +564,11 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     isFirebaseConfigured,
     error,
     notification,
+    notificationPermission,
     login,
     logout,
     dismissNotification,
+    requestNotificationPermission,
     sendMessage,
     markMessageRead,
     addMemory,
@@ -548,7 +584,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     updateSettings,
     updateProfile,
     uploadAsset,
-  }), [currentUser, settings, messages, memories, photos, timeline, letters, songs, isLoading, error, notification]);
+  }), [currentUser, settings, messages, memories, photos, timeline, letters, songs, isLoading, error, notification, notificationPermission]);
 
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>;
 }
