@@ -5,8 +5,8 @@ import {
 } from 'firebase/auth';
 import {
   doc,
+  getDoc,
   getFirestore,
-  runTransaction,
   type DocumentData,
   type Firestore,
 } from 'firebase/firestore';
@@ -70,11 +70,7 @@ export const storage: FirebaseStorage | null = firebaseApp
   : null;
 
 /**
- * Returns a user's private-space profile, creating a minimal USER profile
- * for a newly authenticated Firebase account.
- *
- * The transaction makes the existence check and creation atomic, and
- * deliberately leaves existing profiles (including OWNER profiles) untouched.
+ * Returns an existing user's private-space profile without provisioning users.
  */
 export async function ensureUserProfile(
   firebaseUser: FirebaseUser,
@@ -83,22 +79,15 @@ export async function ensureUserProfile(
     throw new Error('Firebase is not configured.');
   }
 
-  const profileRef = doc(db, 'users', firebaseUser.uid);
+  const profile = await getDoc(doc(db, 'users', firebaseUser.uid));
+  if (!profile.exists()) {
+    throw new Error('No private profile exists for this Firebase account.');
+  }
 
-  return runTransaction(db, async (transaction) => {
-    const profile = await transaction.get(profileRef);
+  const profileData = profile.data();
+  if (profileData.role !== 'OWNER' && profileData.role !== 'USER') {
+    throw new Error('The Firebase profile has an invalid role.');
+  }
 
-    if (profile.exists()) {
-      return profile.data();
-    }
-
-    const profileData = {
-      role: 'USER',
-      ...(firebaseUser.email ? { email: firebaseUser.email } : {}),
-    };
-
-    transaction.set(profileRef, profileData);
-
-    return profileData;
-  });
+  return profileData;
 }

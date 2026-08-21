@@ -23,10 +23,10 @@ import {
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { auth, db, ensureUserProfile, isFirebaseConfigured, storage } from '@/services/firebase';
 
-const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? '').trim().replace(/\/+$/, '');
+const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? 'https://shared-chronicle--faizaniqubal206.replit.app').trim().replace(/\/+$/, '');
 
-export function getAuthApiUrl(): string | null {
-  return authApiBaseUrl ? `${authApiBaseUrl}/auth/login` : null;
+export function getAuthApiUrl(): string {
+  return `${authApiBaseUrl}/auth/login`;
 }
 
 const firebaseAuthErrorMessage = (code: string) => {
@@ -238,8 +238,8 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       try {
-        // Provision a missing profile before verifying its role. The shared
-        // helper never mutates an existing USER or OWNER document.
+        // Verify an existing profile before exposing private features. //
+
         const profile = await ensureUserProfile(firebaseUser);
         const nextUser = userFromSnapshot(firebaseUser, profile);
         if (!nextUser) {
@@ -249,9 +249,12 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
         } else {
           setCurrentUser(nextUser);
         }
-      } catch {
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'The Firebase profile could not be verified.';
+        console.error('[Firebase Auth] Profile verification failed', { code: firebaseAuthErrorCode(error), message });
+        await signOut(currentAuth).catch(() => undefined);
         setCurrentUser(null);
-        setError('We could not verify this private account. Check the Firebase users collection.');
+        setError(message);
       } finally {
         setIsLoading(false);
       }
