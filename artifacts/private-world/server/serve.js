@@ -203,6 +203,11 @@ const server = http.createServer((req, res) => {
         // Only allow the two configured users.
         const allowed = { tommy: { envPass: process.env.TOMMY_PASSWORD, uid: process.env.TOMMY_UID }, jerry: { envPass: process.env.JERRY_PASSWORD, uid: process.env.JERRY_UID } };
         const entry = allowed[username];
+        if (username === 'jerry' && (!entry?.envPass || !entry?.uid)) {
+          res.writeHead(500, { 'content-type': 'application/json', ...authCorsHeaders });
+          res.end(JSON.stringify({ error: 'The jerry account is not configured on the server.' }));
+          return;
+        }
         if (!entry || !entry.envPass || !entry.uid) {
           res.writeHead(401, { 'content-type': 'application/json', ...authCorsHeaders });
           res.end(JSON.stringify({ error: 'Unauthorized' }));
