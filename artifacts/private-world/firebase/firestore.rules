@@ -52,9 +52,15 @@ service cloud.firestore {
         && request.resource.data.senderId == request.auth.uid
         && request.resource.data.senderName is string
         && request.resource.data.text is string
+        && request.resource.data.deliveredTo is list
         && request.resource.data.readBy is list;
       allow update: if hasPrivateProfile()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deliveredTo', 'readBy'])
+        && request.resource.data.deliveredTo is list
+        && request.resource.data.readBy is list
+        && request.resource.data.readBy.hasAll(resource.data.readBy)
+        && (!resource.data.keys().hasAny(['deliveredTo'])
+          || request.resource.data.deliveredTo.hasAll(resource.data.deliveredTo));
       allow delete: if isOwner();
     }
 

@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import {
   addDoc,
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -86,6 +87,7 @@ export type CloudMessage = {
   senderId: string;
   senderName: string;
   createdAt: string;
+  deliveredTo: string[];
   readBy: string[];
 };
 
@@ -152,8 +154,10 @@ type CloudContextValue = {
   isLoading: boolean;
   isFirebaseConfigured: boolean;
   error: string;
+  notification: string;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  dismissNotification: () => void;
   sendMessage: (text: string) => Promise<void>;
   markMessageRead: (messageId: string) => Promise<void>;
   addMemory: (input: { title: string; description: string; date: string; photoUri?: string }, onProgress?: (value: number) => void) => Promise<void>;
@@ -222,6 +226,9 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   const [songs, setSongs] = useState<CloudSong[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [notification, setNotification] = useState('');
+  const messageSnapshotReady = useRef(false);
+  const knownMessageIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!auth || !db) {
@@ -270,17 +277,35 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
       setTimeline([]);
       setLetters([]);
       setSongs([]);
+      setNotification('');
+      messageSnapshotReady.current = false;
+      knownMessageIds.current.clear();
       return undefined;
     }
+    const firestore = db;
     const unsubscribers = [
       onSnapshot(doc(db, 'settings', 'space'), (snapshot) => {
         setSettings(snapshot.exists() ? ({ ...defaultSettings, id: snapshot.id, ...snapshot.data() } as CloudSettings) : defaultSettings);
       }, () => setError('Unable to load shared customization settings.')),
       onSnapshot(query(collection(db, 'messages'), orderBy('createdAt', 'asc')), (snapshot) => {
-        setMessages(snapshot.docs.map((item) => {
+        const nextMessages = snapshot.docs.map((item) => {
           const data = item.data();
-          return { id: item.id, text: data.text ?? '', senderId: data.senderId ?? '', senderName: data.senderName ?? '', createdAt: toIso(data.createdAt), readBy: asStringArray(data.readBy) };
-        }));
+          return { id: item.id, text: data.text ?? '', senderId: data.senderId ?? '', senderName: data.senderName ?? '', createdAt: toIso(data.createdAt), deliveredTo: asStringArray(data.deliveredTo), readBy: asStringArray(data.readBy) };
+        });
+        if (messageSnapshotReady.current) {
+          const incoming = nextMessages.filter((item) => item.senderId !== currentUser.id);
+          const newestIncoming = incoming[incoming.length - 1];
+          if (newestIncoming && !knownMessageIds.current.has(newestIncoming.id)) {
+            setNotification(`${newestIncoming.senderName}: ${newestIncoming.text}`);
+          }
+        }
+        messageSnapshotReady.current = true;
+        nextMessages.forEach((item) => knownMessageIds.current.add(item.id));
+        setMessages(nextMessages);
+        const undelivered = nextMessages.filter((item) => item.senderId !== currentUser.id && !item.deliveredTo.includes(currentUser.id));
+        if (undelivered.length) {
+          void Promise.all(undelivered.map((item) => updateDoc(doc(firestore, 'messages', item.id), { deliveredTo: arrayUnion(currentUser.id) }))).catch(() => undefined);
+        }
       }, () => setError('Unable to sync private chat right now.')),
       onSnapshot(query(collection(db, 'memories'), orderBy('date', 'desc')), (snapshot) => {
         setMemories(snapshot.docs.map((item) => {
@@ -412,14 +437,17 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
       senderName: user.name,
       createdAt: serverTimestamp(),
       readBy: [user.id],
+      deliveredTo: [],
     });
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const markMessageRead = async (messageId: string) => {
     const { user, firestore } = requireCloud();
-    await updateDoc(doc(firestore, 'messages', messageId), { readBy: Array.from(new Set([...(messages.find((item) => item.id === messageId)?.readBy ?? []), user.id])) });
+    await updateDoc(doc(firestore, 'messages', messageId), { readBy: arrayUnion(user.id) });
   };
+
+  const dismissNotification = () => setNotification('');
 
   const addMemory = async (input: { title: string; description: string; date: string; photoUri?: string }, onProgress?: (value: number) => void) => {
     const { user, firestore } = requireCloud();
@@ -501,8 +529,10 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     isLoading,
     isFirebaseConfigured,
     error,
+    notification,
     login,
     logout,
+    dismissNotification,
     sendMessage,
     markMessageRead,
     addMemory,
@@ -518,7 +548,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     updateSettings,
     updateProfile,
     uploadAsset,
-  }), [currentUser, settings, messages, memories, photos, timeline, letters, songs, isLoading, error]);
+  }), [currentUser, settings, messages, memories, photos, timeline, letters, songs, isLoading, error, notification]);
 
   return <CloudContext.Provider value={value}>{children}</CloudContext.Provider>;
 }
