@@ -13,6 +13,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { Expo } = require('expo-server-sdk');
+const webpush = require('web-push');
 
 const STATIC_ROOT = path.resolve(__dirname, '..', 'static-build');
 const TEMPLATE_PATH = path.resolve(__dirname, 'templates', 'landing-page.html');
@@ -133,6 +134,15 @@ function serveStaticFile(urlPath, res) {
 const landingPageTemplate = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 const appName = getAppName();
 const expo = new Expo();
+let webPushConfigured = false;
+if (process.env.WEB_PUSH_VAPID_SUBJECT && process.env.WEB_PUSH_VAPID_PUBLIC_KEY && process.env.WEB_PUSH_VAPID_PRIVATE_KEY) {
+  try {
+    webpush.setVapidDetails(process.env.WEB_PUSH_VAPID_SUBJECT, process.env.WEB_PUSH_VAPID_PUBLIC_KEY, process.env.WEB_PUSH_VAPID_PRIVATE_KEY);
+    webPushConfigured = true;
+  } catch (error) {
+    console.error('Web Push VAPID configuration is invalid', { error: error?.message || 'unknown' });
+  }
+}
 
 // Lightweight auth endpoint to exchange a server-side username/password for a
 // Firebase custom token. The server uses service account credentials provided
@@ -331,6 +341,35 @@ const server = http.createServer((req, res) => {
           if (invalidTokens.includes(profile?.data().pushToken)) update.pushToken = admin.firestore.FieldValue.delete();
           return admin.firestore().collection('users').doc(uid).update(update);
         }));
+        const webSubscriptions = new Map();
+        recipients.forEach((profile) => {
+          const subscriptions = Array.isArray(profile.data().webPushSubscriptions) ? profile.data().webPushSubscriptions : [];
+          subscriptions.forEach((subscription) => {
+            if (subscription?.endpoint && subscription?.keys?.p256dh && subscription?.keys?.auth) webSubscriptions.set(subscription.endpoint, { owner: profile, subscription });
+          });
+        });
+        const invalidWebByUser = new Map();
+        if (webPushConfigured) {
+          const webEntries = [...webSubscriptions.values()];
+          for (let start = 0; start < webEntries.length; start += 50) {
+            await Promise.all(webEntries.slice(start, start + 50).map(async ({ owner, subscription }) => {
+              try {
+                await webpush.sendNotification(subscription, JSON.stringify({
+                  title: `Message from ${message.senderName || 'your private world'}`,
+                  body: message.text.trim().slice(0, 180),
+                  data: { screen: 'chat', messageId },
+                }));
+              } catch (error) {
+                if (error?.statusCode === 404 || error?.statusCode === 410) {
+                  invalidWebByUser.set(owner.id, [...(invalidWebByUser.get(owner.id) || []), subscription]);
+                } else {
+                  console.error('Web Push notification failed', { error: error?.message || 'unknown' });
+                }
+              }
+            }));
+          }
+        }
+        await Promise.all([...invalidWebByUser.entries()].map(([uid, invalidSubscriptions]) => admin.firestore().collection('users').doc(uid).update({ webPushSubscriptions: admin.firestore.FieldValue.arrayRemove(...invalidSubscriptions) })));
         await messageRef.update({ pushNotificationStatus: 'sent', pushNotificationSentAt: admin.firestore.FieldValue.serverTimestamp() });
         return json(200, { sent: tokens.length > 0 });
       } catch (error) {
