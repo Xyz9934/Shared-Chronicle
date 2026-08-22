@@ -35,6 +35,12 @@
       "baseUrl": "/Shared-Chronicle/",
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7df49d6d-1996-453d-9870-a77170c0e5be"
+      }
+    },
+    "owner": "tommy_tech"
   }
 }
