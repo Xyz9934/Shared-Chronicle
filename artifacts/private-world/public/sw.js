@@ -1,4 +1,4 @@
-const APP_BASE_PATH = '/Shared-Chronicle/';
+const APP_BASE_PATH = '/';
 
 self.addEventListener('push', (event) => {
   let payload = {};

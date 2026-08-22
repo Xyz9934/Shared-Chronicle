@@ -16,7 +16,9 @@
     "ios": {
       "supportsTablet": false
     },
-    "android": {},
+    "android": {
+      "package": "com.tommy_tech.pvtwrld"
+    },
     "web": {
       "favicon": "./assets/images/icon_2.png",
       "output": "static"
@@ -38,7 +40,7 @@
       ]
     ],
     "experiments": {
-      "baseUrl": "/Shared-Chronicle/",
+      "baseUrl": "/",
       "typedRoutes": true,
       "reactCompiler": true
     },

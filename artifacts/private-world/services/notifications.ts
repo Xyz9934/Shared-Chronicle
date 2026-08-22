@@ -5,7 +5,7 @@ import { auth } from '@/services/firebase';
 
 const backendBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? 'https://shared-chronicle--faizaniqubal206.replit.app').trim().replace(/\/+$/, '');
 const webPushVapidPublicKey = process.env.EXPO_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY?.trim() ?? '';
-const webBasePath = (process.env.EXPO_PUBLIC_WEB_BASE_PATH ?? '/Shared-Chronicle/').replace(/^\/?/, '/').replace(/\/+$/, '') + '/';
+const webBasePath = (process.env.EXPO_PUBLIC_WEB_BASE_PATH ?? '/').replace(/^\/?/, '/').replace(/\/+$/, '') + '/';
 
 type NotificationData = Record<string, unknown>;
 type NotificationResponseHandler = (data: NotificationData) => void;

@@ -1,6 +1,6 @@
 # GitHub Pages web deployment
 
-The `@workspace/private-world` Expo app exports a static web build at `/Shared-Chronicle/`. Pushes to `main` run `.github/workflows/deploy-pages.yml` and publish `artifacts/private-world/dist` with GitHub Pages.
+The `@workspace/private-world` Expo app exports a static web build at the root of `https://pvtwrld.site/`. Pushes to `main` run `.github/workflows/deploy-pages.yml` and publish `artifacts/private-world/dist` with GitHub Pages.
 
 ## GitHub repository variables
 
@@ -28,7 +28,7 @@ In Firebase Authentication, add `dont-click-me.github.io` to the authorized doma
 
 Under **Settings > Pages**, set **Source** to **GitHub Actions**. No manual `dist` upload is required. The deployed site is:
 
-<https://dont-click-me.github.io/Shared-Chronicle/>
+<https://pvtwrld.site/>
 
 The workflow copies the Expo `index.html` to `404.html` so a GitHub Pages refresh can load the client application instead of permanently returning a static-hosting 404.
 
