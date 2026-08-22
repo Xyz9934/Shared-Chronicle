@@ -1,6 +1,9 @@
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
+import { auth } from '@/services/firebase';
+
+const backendBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? 'https://shared-chronicle--faizaniqubal206.replit.app').trim().replace(/\/+$/, '');
 
 type NotificationData = Record<string, unknown>;
 type NotificationResponseHandler = (data: NotificationData) => void;
@@ -17,6 +20,21 @@ if (Platform.OS !== 'web') {
       shouldShowList: false,
     }),
   });
+}
+
+export async function notifyNewChatMessage(messageId: string): Promise<void> {
+  const user = auth?.currentUser;
+  if (!user) return;
+  try {
+    const token = await user.getIdToken();
+    await fetch(`${backendBaseUrl}/notifications/chat-message`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ messageId }),
+    });
+  } catch {
+    // Push delivery is best effort and must not affect chat persistence.
+  }
 }
 
 export async function registerForPushNotificationsAsync(): Promise<string | null> {

@@ -63,6 +63,7 @@
     "expo-av": "~16.0.8",
     "expo-document-picker": "~14.0.8",
     "expo-notifications": "~0.32.17",
+    "expo-server-sdk": "^3.15.0",
     "firebase": "^12.17.1",
     "firebase-admin": "^11.11.0"
   }

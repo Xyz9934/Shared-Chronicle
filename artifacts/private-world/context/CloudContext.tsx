@@ -23,7 +23,7 @@ import {
 } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { auth, db, ensureUserProfile, isFirebaseConfigured, storage } from '@/services/firebase';
-import { registerForPushNotificationsAsync } from '@/services/notifications';
+import { notifyNewChatMessage, registerForPushNotificationsAsync } from '@/services/notifications';
 
 const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? 'https://shared-chronicle--faizaniqubal206.replit.app').trim().replace(/\/+$/, '');
 
@@ -466,7 +466,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   const sendMessage = async (text: string) => {
     const { user, firestore } = requireCloud();
     if (!text.trim()) return;
-    await addDoc(collection(firestore, 'messages'), {
+    const message = await addDoc(collection(firestore, 'messages'), {
       text: text.trim(),
       senderId: user.id,
       senderName: user.name,
@@ -474,6 +474,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
       readBy: [user.id],
       deliveredTo: [],
     });
+    void notifyNewChatMessage(message.id);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 

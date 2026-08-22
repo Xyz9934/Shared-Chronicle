@@ -12,13 +12,14 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { Expo } = require('expo-server-sdk');
 
 const STATIC_ROOT = path.resolve(__dirname, '..', 'static-build');
 const TEMPLATE_PATH = path.resolve(__dirname, 'templates', 'landing-page.html');
 const basePath = (process.env.BASE_PATH || '/').replace(/\/+$/, '');
 const pagesOrigin = (process.env.PAGES_ORIGIN || '').trim();
 const authCorsHeaders = {
-  'access-control-allow-headers': 'content-type',
+  'access-control-allow-headers': 'authorization, content-type',
   'access-control-allow-methods': 'POST, OPTIONS',
   ...(pagesOrigin ? { 'access-control-allow-origin': pagesOrigin } : {}),
 };
@@ -131,6 +132,7 @@ function serveStaticFile(urlPath, res) {
 
 const landingPageTemplate = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 const appName = getAppName();
+const expo = new Expo();
 
 // Lightweight auth endpoint to exchange a server-side username/password for a
 // Firebase custom token. The server uses service account credentials provided
@@ -239,6 +241,101 @@ const server = http.createServer((req, res) => {
       } catch (err) {
         res.writeHead(500, { 'content-type': 'application/json', ...authCorsHeaders });
         res.end(JSON.stringify({ error: 'Authentication error' }));
+      }
+    });
+    return;
+  }
+
+  // Authenticated best-effort push endpoint. The client sends only the
+  // Firestore message ID; this server reads the message and push tokens.
+  if (pathname === '/notifications/chat-message' && req.method === 'OPTIONS') {
+    res.writeHead(204, authCorsHeaders);
+    res.end();
+    return;
+  }
+
+  if (pathname === '/notifications/chat-message' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 4096) req.destroy();
+    });
+    req.on('end', async () => {
+      const json = (status, payload) => {
+        res.writeHead(status, { 'content-type': 'application/json', ...authCorsHeaders });
+        res.end(JSON.stringify(payload));
+      };
+
+      try {
+        if (!adminInitialized) return json(503, { error: 'Push notifications are not configured.' });
+        const authorization = req.headers.authorization || '';
+        if (!authorization.startsWith('Bearer ')) return json(401, { error: 'Unauthorized' });
+        const decoded = await admin.auth().verifyIdToken(authorization.slice(7));
+        const payload = JSON.parse(body || '{}');
+        const messageId = typeof payload.messageId === 'string' ? payload.messageId.trim() : '';
+        if (!messageId || !/^[A-Za-z0-9_-]{1,150}$/.test(messageId)) return json(400, { error: 'Invalid message ID' });
+
+        const messageRef = admin.firestore().collection('messages').doc(messageId);
+        const messageSnapshot = await messageRef.get();
+        if (!messageSnapshot.exists) return json(404, { error: 'Message not found' });
+        const message = messageSnapshot.data();
+        if (!message || message.senderId !== decoded.uid || typeof message.text !== 'string' || !message.text.trim()) return json(403, { error: 'Forbidden' });
+
+        const claim = await admin.firestore().runTransaction(async (transaction) => {
+          const current = await transaction.get(messageRef);
+          const currentData = current.data() || {};
+          if (currentData.pushNotificationStatus === 'sent' || currentData.pushNotificationStatus === 'sending') return false;
+          transaction.update(messageRef, { pushNotificationStatus: 'sending' });
+          return true;
+        });
+        if (!claim) return json(200, { sent: false, duplicate: true });
+
+        const recipientId = typeof message.recipientId === 'string' && message.recipientId !== decoded.uid ? message.recipientId : '';
+        const users = recipientId
+          ? [await admin.firestore().collection('users').doc(recipientId).get()]
+          : (await admin.firestore().collection('users').get()).docs.filter((profile) => profile.id !== decoded.uid);
+        const recipients = users.filter((profile) => profile.exists && ['OWNER', 'USER'].includes(profile.data().role));
+        const tokenOwners = new Map();
+        recipients.forEach((profile) => {
+          const data = profile.data();
+          const values = Array.isArray(data.pushTokens) ? data.pushTokens : typeof data.pushToken === 'string' ? [data.pushToken] : [];
+          values.filter((token) => typeof token === 'string' && Expo.isExpoPushToken(token)).forEach((token) => tokenOwners.set(token, profile));
+        });
+        const tokens = [...tokenOwners.keys()];
+        const messages = tokens.map((to) => ({
+          to,
+          sound: 'default',
+          title: `Message from ${message.senderName || 'your private world'}`,
+          body: message.text.trim().slice(0, 180),
+          data: { screen: 'chat', messageId },
+          channelId: 'chat-messages',
+        }));
+        const invalidByUser = new Map();
+        for (const chunk of expo.chunkPushNotifications(messages)) {
+          try {
+            const tickets = await expo.sendPushNotificationsAsync(chunk);
+            tickets.forEach((ticket, index) => {
+              if (ticket.status === 'error' && ticket.details?.error === 'DeviceNotRegistered') {
+                const token = chunk[index].to;
+                const owner = tokenOwners.get(token);
+                if (owner) invalidByUser.set(owner.id, [...(invalidByUser.get(owner.id) || []), token]);
+              }
+            });
+          } catch (error) {
+            console.error('Expo push notification batch failed', { error });
+          }
+        }
+        await Promise.all([...invalidByUser.entries()].map(([uid, invalidTokens]) => {
+          const update = { pushTokens: admin.firestore.FieldValue.arrayRemove(...invalidTokens) };
+          const profile = recipients.find((candidate) => candidate.id === uid);
+          if (invalidTokens.includes(profile?.data().pushToken)) update.pushToken = admin.firestore.FieldValue.delete();
+          return admin.firestore().collection('users').doc(uid).update(update);
+        }));
+        await messageRef.update({ pushNotificationStatus: 'sent', pushNotificationSentAt: admin.firestore.FieldValue.serverTimestamp() });
+        return json(200, { sent: tokens.length > 0 });
+      } catch (error) {
+        console.error('Chat push notification request failed', { error: error?.code || error?.message || 'unknown' });
+        return json(500, { error: 'Push notification request failed' });
       }
     });
     return;
