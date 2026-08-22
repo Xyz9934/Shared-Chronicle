@@ -245,6 +245,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionState>('unsupported');
   const messageSnapshotReady = useRef(false);
   const knownMessageIds = useRef<Set<string>>(new Set());
+  const pendingMessages = useRef<Map<string, CloudMessage>>(new Map());
 
   useEffect(() => {
     const browserNotification = getBrowserNotification();
@@ -315,6 +316,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
       setNotification('');
       messageSnapshotReady.current = false;
       knownMessageIds.current.clear();
+      pendingMessages.current.clear();
       return undefined;
     }
     const firestore = db;
@@ -323,10 +325,14 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
         setSettings(snapshot.exists() ? ({ ...defaultSettings, id: snapshot.id, ...snapshot.data() } as CloudSettings) : defaultSettings);
       }, () => setError('Unable to load shared customization settings.')),
       onSnapshot(query(collection(db, 'messages'), orderBy('createdAt', 'asc')), (snapshot) => {
-        const nextMessages = snapshot.docs.map((item) => {
+        const confirmedMessages = snapshot.docs.map((item) => {
           const data = item.data();
           return { id: item.id, text: data.text ?? '', senderId: data.senderId ?? '', senderName: data.senderName ?? '', createdAt: toIso(data.createdAt), deliveredTo: asStringArray(data.deliveredTo), readBy: asStringArray(data.readBy) };
         });
+        const confirmedIds = new Set(confirmedMessages.map((item) => item.id));
+        confirmedIds.forEach((id) => pendingMessages.current.delete(id));
+        const nextMessages = [...confirmedMessages, ...pendingMessages.current.values()]
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
         if (messageSnapshotReady.current) {
           const incoming = nextMessages.filter((item) => item.senderId !== currentUser.id);
           const newestIncoming = incoming[incoming.length - 1];
@@ -470,15 +476,33 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   const sendMessage = async (text: string) => {
     const { user, firestore } = requireCloud();
     if (!text.trim()) return;
-    const message = await addDoc(collection(firestore, 'messages'), {
+    const messageRef = doc(collection(firestore, 'messages'));
+    const pendingMessage: CloudMessage = {
+      id: messageRef.id,
       text: text.trim(),
       senderId: user.id,
       senderName: user.name,
-      createdAt: serverTimestamp(),
+      createdAt: new Date().toISOString(),
       readBy: [user.id],
       deliveredTo: [],
-    });
-    void notifyNewChatMessage(message.id);
+    };
+    pendingMessages.current.set(messageRef.id, pendingMessage);
+    setMessages((current) => [...current, pendingMessage]);
+    try {
+      await setDoc(messageRef, {
+        text: pendingMessage.text,
+        senderId: pendingMessage.senderId,
+        senderName: pendingMessage.senderName,
+        createdAt: serverTimestamp(),
+        readBy: pendingMessage.readBy,
+        deliveredTo: pendingMessage.deliveredTo,
+      });
+    } catch (error) {
+      pendingMessages.current.delete(messageRef.id);
+      setMessages((current) => current.filter((item) => item.id !== messageRef.id));
+      throw error;
+    }
+    void notifyNewChatMessage(messageRef.id);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
