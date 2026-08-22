@@ -22,6 +22,7 @@ import { KeyboardAvoidingView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCloudApp, type CloudLetter, type CloudMemory, type CloudPhoto, type CloudTimelineEntry } from '@/context/CloudContext';
 import colors from '@/constants/colors';
+import { subscribeToNotificationResponses } from '@/services/notifications';
 
 const c = colors.light;
 type Icon = keyof typeof Feather.glyphMap;
@@ -342,6 +343,9 @@ export default function CloudPrivateWorldApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [photo, setPhoto] = useState<CloudPhoto | null>(null);
   const [edit, setEdit] = useState<{ kind: 'memory' | 'timeline'; item: CloudMemory | CloudTimelineEntry } | null>(null);
+  useEffect(() => subscribeToNotificationResponses((data) => {
+    if (data.screen === 'chat' || typeof data.messageId === 'string') setSection('chat');
+  }), []);
   if (isLoading) return <View style={styles.loading}><Mark size={58} /><Text style={styles.loadingTitle}>Opening your private world…</Text><Text style={styles.loadingSub}>Checking the two-person access list.</Text></View>;
   if (!currentUser) return <Login />;
   const unread = messages.filter((item) => item.senderId !== currentUser.id && !item.readBy.includes(currentUser.id)).length;

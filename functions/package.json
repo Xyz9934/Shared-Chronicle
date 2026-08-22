@@ -1,0 +1,16 @@
+{
+  "name": "shared-chronicle-functions",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "check": "node --check index.js"
+  },
+  "dependencies": {
+    "expo-server-sdk": "^3.15.0",
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.2"
+  }
+}

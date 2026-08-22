@@ -23,6 +23,7 @@ import {
 } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { auth, db, ensureUserProfile, isFirebaseConfigured, storage } from '@/services/firebase';
+import { registerForPushNotificationsAsync } from '@/services/notifications';
 
 const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? 'https://shared-chronicle--faizaniqubal206.replit.app').trim().replace(/\/+$/, '');
 
@@ -249,6 +250,16 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     const browserNotification = getBrowserNotification();
     if (browserNotification) setNotificationPermission(browserNotification.permission);
   }, []);
+
+  useEffect(() => {
+    if (!currentUser || !db) return undefined;
+    const firestore = db;
+    void registerForPushNotificationsAsync().then((token) => {
+      if (!token) return;
+      return setDoc(doc(firestore, 'users', currentUser.id), { pushTokens: arrayUnion(token) }, { merge: true });
+    }).catch(() => undefined);
+    return undefined;
+  }, [currentUser]);
 
   useEffect(() => {
     if (!auth || !db) {
