@@ -23,7 +23,7 @@ import {
 } from 'firebase/auth';
 import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 import { auth, db, ensureUserProfile, isFirebaseConfigured, storage } from '@/services/firebase';
-import { notifyNewChatMessage, registerForPushNotificationsAsync } from '@/services/notifications';
+import { notifyNewChatMessage, registerForPushNotificationsAsync, registerWebPushNotificationsAsync } from '@/services/notifications';
 
 const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? 'https://shared-chronicle--faizaniqubal206.replit.app').trim().replace(/\/+$/, '');
 
@@ -257,6 +257,10 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     void registerForPushNotificationsAsync().then((token) => {
       if (!token) return;
       return setDoc(doc(firestore, 'users', currentUser.id), { pushTokens: arrayUnion(token) }, { merge: true });
+    }).catch(() => undefined);
+    void registerWebPushNotificationsAsync().then((subscription) => {
+      if (!subscription) return;
+      return setDoc(doc(firestore, 'users', currentUser.id), { webPushSubscriptions: arrayUnion(subscription) }, { merge: true });
     }).catch(() => undefined);
     return undefined;
   }, [currentUser]);
@@ -493,6 +497,10 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     }
     const permission = await browserNotification.requestPermission();
     setNotificationPermission(permission);
+    if (permission === 'granted' && currentUser && db) {
+      const subscription = await registerWebPushNotificationsAsync(true);
+      if (subscription) await setDoc(doc(db, 'users', currentUser.id), { webPushSubscriptions: arrayUnion(subscription) }, { merge: true });
+    }
   };
 
   const addMemory = async (input: { title: string; description: string; date: string; photoUri?: string }, onProgress?: (value: number) => void) => {
