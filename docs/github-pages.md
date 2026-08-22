@@ -18,11 +18,11 @@ The existing Firebase Web project values identify project `crush-61d24`, auth do
 
 Use the actual values from the existing Firebase Web app and server deployment. Do not invent or commit credentials.
 
-The Replit server must retain its existing server-only environment variables, including `FIREBASE_SERVICE_ACCOUNT_KEY` or `GOOGLE_APPLICATION_CREDENTIALS`, `TOMMY_PASSWORD`, `TOMMY_UID`, `JERRY_PASSWORD`, and `JERRY_UID`. They must never be added to `EXPO_PUBLIC_*` variables or GitHub Pages build variables. Set `PAGES_ORIGIN=https://dont-click-me.github.io` on that server to enable auth CORS for this site. The server intentionally does not emit a wildcard CORS origin when `PAGES_ORIGIN` is unset.
+The Replit server must retain its existing server-only environment variables, including `FIREBASE_SERVICE_ACCOUNT_KEY` or `GOOGLE_APPLICATION_CREDENTIALS`, `TOMMY_PASSWORD`, `TOMMY_UID`, `JERRY_PASSWORD`, and `JERRY_UID`. They must never be added to `EXPO_PUBLIC_*` variables or GitHub Pages build variables. The server explicitly allows auth requests from `https://pvtwrld.site` and `https://www.pvtwrld.site`; `PAGES_ORIGIN` may additionally allow a configured development or legacy origin. The server intentionally does not emit a wildcard CORS origin.
 
 After changing the Replit server or its Secrets, redeploy the production service and verify that `POST /auth/login` is reachable from the Pages origin. A `401` means credentials/account authorization was rejected; a `500` means the server-side Firebase or account configuration is incomplete.
 
-In Firebase Authentication, add `dont-click-me.github.io` to the authorized domains if it is not already present.
+In Firebase Authentication, add `pvtwrld.site` and `www.pvtwrld.site` to the authorized domains if they are not already present.
 
 ## GitHub Pages settings
 
