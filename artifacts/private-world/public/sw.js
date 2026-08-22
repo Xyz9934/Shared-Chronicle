@@ -1,4 +1,4 @@
-const APP_BASE_PATH = '/';
+const APP_BASE_PATH = '__APP_BASE_PATH__';
 
 self.addEventListener('push', (event) => {
   let payload = {};

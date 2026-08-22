@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 
 const distDirectory = path.join(__dirname, '..', 'dist');
+const projectDirectory = path.join(__dirname, '..');
 const fileExtensions = new Set(['.css', '.html', '.js', '.json']);
+const basePath = (process.env.BASE_PATH || '/').replace(/\/+$/, '') || '/';
 
 function normalizeFile(filePath) {
   const contents = fs.readFileSync(filePath, 'utf8');
@@ -29,4 +31,7 @@ if (!fs.existsSync(distDirectory)) {
 }
 
 walk(distDirectory);
+const serviceWorker = fs.readFileSync(path.join(projectDirectory, 'public', 'sw.js'), 'utf8')
+  .replaceAll('__APP_BASE_PATH__', `${basePath === '/' ? '' : basePath}/`);
+fs.writeFileSync(path.join(distDirectory, 'sw.js'), serviceWorker);
 console.log('Normalized root-relative web asset URLs.');

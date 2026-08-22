@@ -17,6 +17,13 @@ export type WebPushSubscription = {
 const projectId = Constants.expoConfig?.extra?.eas?.projectId
   ?? (Constants as typeof Constants & { easConfig?: { projectId?: string } }).easConfig?.projectId;
 
+function decodeBase64Url(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  const binary = globalThis.atob(padded);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
@@ -36,7 +43,12 @@ export async function registerWebPushNotificationsAsync(requestPermission = fals
     const registration = await navigator.serviceWorker.register(`${webBasePath}sw.js`, { scope: webBasePath });
     await navigator.serviceWorker.ready;
     let subscription = await registration.pushManager.getSubscription();
-    if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: webPushVapidPublicKey });
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: decodeBase64Url(webPushVapidPublicKey) as unknown as BufferSource,
+      });
+    }
     const json = subscription.toJSON();
     if (!json.endpoint || !json.keys?.p256dh || !json.keys.auth) return null;
     return { endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } };
