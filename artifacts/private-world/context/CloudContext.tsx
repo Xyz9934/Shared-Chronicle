@@ -21,9 +21,9 @@ import {
   signOut,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
-import { auth, db, ensureUserProfile, isFirebaseConfigured, storage } from '@/services/firebase';
+import { auth, db, ensureUserProfile, isFirebaseConfigured } from '@/services/firebase';
 import { notifyNewChatMessage, registerForPushNotificationsAsync, registerWebPushNotificationsAsync } from '@/services/notifications';
+import { uploadMedia } from '@/services/supabase';
 
 const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? 'https://shared-chronicle--faizaniqubal206.replit.app').trim().replace(/\/+$/, '');
 
@@ -387,8 +387,8 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   }, [currentUser]);
 
   const requireCloud = () => {
-    if (!currentUser || !db || !storage) throw new Error('A verified Firebase session is required.');
-    return { user: currentUser, firestore: db, files: storage };
+    if (!currentUser || !db) throw new Error('A verified Firebase session is required.');
+    return { user: currentUser, firestore: db };
   };
 
   const login = async (username: string, password: string) => {
@@ -460,30 +460,7 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   };
 
   const uploadAsset = async (uri: string, path: string, onProgress?: (value: number) => void) => {
-    const { files } = requireCloud();
-    const response = await fetch(uri);
-    if (!response.ok) throw new Error(`Could not read the selected file (${response.status}).`);
-    const blob = await response.blob();
-    const task = uploadBytesResumable(ref(files, path), blob);
-    return await new Promise<string>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        task.cancel();
-        reject(new Error('The upload timed out. Check Firebase Storage CORS settings for this website.'));
-      }, 30_000);
-      task.on('state_changed', (snapshot) => {
-        onProgress?.(snapshot.totalBytes ? snapshot.bytesTransferred / snapshot.totalBytes : 0);
-      }, (error) => {
-        clearTimeout(timeout);
-        reject(error);
-      }, async () => {
-        clearTimeout(timeout);
-        try {
-          resolve(await getDownloadURL(task.snapshot.ref));
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
+    return uploadMedia(uri, path, onProgress);
   };
 
   const sendMessage = async (text: string) => {

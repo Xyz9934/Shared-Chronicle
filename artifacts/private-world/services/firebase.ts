@@ -11,7 +11,6 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
-import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 export type FirebaseConfig = {
   apiKey: string;
@@ -38,7 +37,9 @@ export const firebaseConfig: FirebaseConfig = {
   appId: publicEnv(process.env.EXPO_PUBLIC_FIREBASE_APP_ID),
 };
 
-export const isFirebaseConfigured = Object.values(firebaseConfig).every((value) => value.length > 0);
+export const isFirebaseConfigured = Object.entries(firebaseConfig)
+  .filter(([key]) => key !== 'storageBucket')
+  .every(([, value]) => value.length > 0);
 
 export const syncMode = isFirebaseConfigured
   ? 'Firebase cloud sync'
@@ -63,10 +64,6 @@ export const auth = firebaseAuth;
 
 export const db: Firestore | null = firebaseApp
   ? getFirestore(firebaseApp)
-  : null;
-
-export const storage: FirebaseStorage | null = firebaseApp
-  ? getStorage(firebaseApp)
   : null;
 
 /**
