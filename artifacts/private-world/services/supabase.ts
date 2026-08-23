@@ -22,10 +22,16 @@ export async function uploadMedia(
   const blob = await response.blob();
   onProgress?.(0);
 
-  const { error } = await supabase.storage.from(supabaseBucket).upload(objectPath, blob, {
+  const upload = supabase.storage.from(supabaseBucket).upload(objectPath, blob, {
     contentType: blob.type || 'application/octet-stream',
     upsert: false,
   });
+  const { error } = await Promise.race([
+    upload,
+    new Promise<{ error: Error }>((_, reject) => {
+      setTimeout(() => reject(new Error('Supabase upload timed out. Check the bucket name and upload policy.')), 30_000);
+    }),
+  ]);
   if (error) throw new Error(`Media upload failed: ${error.message}`);
 
   onProgress?.(1);
