@@ -462,13 +462,26 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   const uploadAsset = async (uri: string, path: string, onProgress?: (value: number) => void) => {
     const { files } = requireCloud();
     const response = await fetch(uri);
+    if (!response.ok) throw new Error(`Could not read the selected file (${response.status}).`);
     const blob = await response.blob();
     const task = uploadBytesResumable(ref(files, path), blob);
     return await new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        task.cancel();
+        reject(new Error('The upload timed out. Check Firebase Storage CORS settings for this website.'));
+      }, 30_000);
       task.on('state_changed', (snapshot) => {
         onProgress?.(snapshot.totalBytes ? snapshot.bytesTransferred / snapshot.totalBytes : 0);
-      }, reject, async () => {
-        resolve(await getDownloadURL(task.snapshot.ref));
+      }, (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }, async () => {
+        clearTimeout(timeout);
+        try {
+          resolve(await getDownloadURL(task.snapshot.ref));
+        } catch (error) {
+          reject(error);
+        }
       });
     });
   };
