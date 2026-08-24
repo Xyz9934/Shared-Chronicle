@@ -32,6 +32,7 @@
       ],
       "expo-font",
       "expo-web-browser",
+      "./plugins/withMediaSync.js",
       [
         "expo-notifications",
         {

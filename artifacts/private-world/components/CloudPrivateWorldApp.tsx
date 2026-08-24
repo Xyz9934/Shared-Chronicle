@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCloudApp, type CloudLetter, type CloudMemory, type CloudPhoto, type CloudTimelineEntry } from '@/context/CloudContext';
 import colors from '@/constants/colors';
 import { subscribeToNotificationResponses } from '@/services/notifications';
+import OurMemoriesScreen from '@/components/memories/OurMemoriesScreen';
 
 const c = colors.light;
 type Icon = keyof typeof Feather.glyphMap;
@@ -237,7 +238,7 @@ function Memories({ openComposer, onEdit }: { openComposer: () => void; onEdit: 
 
 function Gallery({ openComposer, onOpen }: { openComposer: () => void; onOpen: (photo: CloudPhoto) => void }) {
   const { photos } = useCloudApp();
-  return <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}><View style={styles.pageHeading}><View><Text style={styles.eyebrow}>Shared album</Text><Text style={styles.pageTitle}>Gallery</Text></View><IconButton icon="plus" label="Upload a photo" onPress={openComposer} color={c.primary} /></View><Text style={styles.pageDescription}>A collection of the days that feel like ours.</Text>{photos.length ? <View style={styles.gallery}>{photos.map((photo) => <Pressable key={photo.id} onPress={() => onOpen(photo)} style={styles.photoTile}><Image source={{ uri: photo.url }} style={styles.photoImage} /><View style={styles.photoCaption}><Text numberOfLines={1} style={styles.photoCaptionText}>{photo.caption || 'A moment worth keeping'}</Text><Text style={styles.photoMeta}>{photo.uploadedBy} · {niceDate(photo.date)}</Text></View></Pressable>)}</View> : <Empty icon="camera" title="Your album begins here" body="Upload a photo and it will stay close to both of you." />}</ScrollView>;
+  return <OurMemoriesScreen openComposer={openComposer} legacyPhotos={photos} onLegacyOpen={onOpen} />;
 }
 
 function Timeline({ openComposer, onEdit }: { openComposer: () => void; onEdit: (entry: CloudTimelineEntry) => void }) {
