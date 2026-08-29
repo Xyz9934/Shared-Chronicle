@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import { getAuthApiUrl } from '@/context/CloudContext';
-import { ensureUserProfile, isFirebaseConfigured, auth, db } from '@/services/firebase';
+import { ensureUserProfile, initializeFirebase, isFirebaseConfigured, auth, db } from '@/services/firebase';
 import { onAuthStateChanged, signInWithCustomToken, signOut, type User as FirebaseUser } from 'firebase/auth';
 import {
   collection,
@@ -180,9 +180,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !auth) return undefined;
+    const initialized = initializeFirebase();
+    if (!isFirebaseConfigured || !initialized.auth) return undefined;
 
-    const firebaseAuth = auth;
+    const firebaseAuth = initialized.auth;
     setIsLoading(true);
     return onAuthStateChanged(firebaseAuth, (firebaseUser) => {
       void (async () => {

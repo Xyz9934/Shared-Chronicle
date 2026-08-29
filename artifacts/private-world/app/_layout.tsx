@@ -17,7 +17,11 @@ import { CloudProvider } from '@/context/CloudContext';
 import { Feather } from '@expo/vector-icons';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync().catch((error) => {
+  console.error('[SplashScreen] Initialization failed', {
+    message: error instanceof Error ? error.message : 'Unknown error',
+  });
+});
 
 const queryClient = new QueryClient();
 

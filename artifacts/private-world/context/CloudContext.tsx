@@ -21,7 +21,7 @@ import {
   signOut,
   type User as FirebaseUser,
 } from 'firebase/auth';
-import { auth, db, ensureUserProfile, isFirebaseConfigured } from '@/services/firebase';
+import { auth, db, ensureUserProfile, firebaseInitializationError, initializeFirebase, isFirebaseConfigured } from '@/services/firebase';
 import { notifyNewChatMessage, registerForPushNotificationsAsync, registerWebPushNotificationsAsync } from '@/services/notifications';
 import { uploadMedia } from '@/services/supabase';
 
@@ -268,7 +268,9 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!auth || !db) {
-      setError('Firebase configuration is missing. Add the requested environment values and restart the app.');
+      setError(firebaseInitializationError
+        ? 'Firebase initialization failed. Check the app configuration and restart the app.'
+        : 'Firebase configuration is missing. Add the requested environment values and restart the app.');
       setIsLoading(false);
       return undefined;
     }

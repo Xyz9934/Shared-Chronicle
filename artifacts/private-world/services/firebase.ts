@@ -1,8 +1,5 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import {
-  getAuth,
-  type Auth,
-} from 'firebase/auth';
+import type { Auth } from 'firebase/auth';
 import {
   doc,
   getDoc,
@@ -11,6 +8,8 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import type { User as FirebaseUser } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 export type FirebaseConfig = {
   apiKey: string;
@@ -22,6 +21,8 @@ export type FirebaseConfig = {
 };
 
 const publicEnv = (value: string | undefined) => value?.trim() ?? '';
+type FirebaseAuthModule = typeof import('firebase/auth');
+type InitializeAuthDependencies = NonNullable<Parameters<FirebaseAuthModule['initializeAuth']>[1]>;
 
 /**
  * Firebase stays behind this boundary so the UI never needs to know where
@@ -45,26 +46,45 @@ export const syncMode = isFirebaseConfigured
   ? 'Firebase cloud sync'
   : 'Private preview mode';
 
-export const firebaseApp = isFirebaseConfigured
-  ? getApps().length
-    ? getApp()
-    : initializeApp(firebaseConfig)
-  : null;
+export let firebaseApp: ReturnType<typeof initializeApp> | null = null;
+export let auth: Auth | null = null;
+export let db: Firestore | null = null;
+export let firebaseInitializationError: Error | null = null;
+let firebaseInitialized = false;
 
-let firebaseAuth: Auth | null = null;
+export function initializeFirebase(): { auth: Auth | null; db: Firestore | null } {
+  if (firebaseInitialized) return { auth, db };
+  firebaseInitialized = true;
 
-if (firebaseApp) {
-  // Firebase 12 selects its React Native Auth implementation from the
-  // `firebase/auth` export itself. The former React Native subpath imports
-  // are not used because they are unavailable in Firebase 12.17.1.
-  firebaseAuth = getAuth(firebaseApp);
+  if (!isFirebaseConfigured) return { auth, db };
+
+  try {
+    firebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
+    const firebaseAuthModule = require('firebase/auth') as FirebaseAuthModule & {
+      getReactNativePersistence: (
+        storage: typeof AsyncStorage,
+      ) => InitializeAuthDependencies['persistence'];
+    };
+    auth = Platform.OS === 'web'
+      ? firebaseAuthModule.getAuth(firebaseApp)
+      : firebaseAuthModule.initializeAuth(firebaseApp, {
+          persistence: firebaseAuthModule.getReactNativePersistence(AsyncStorage),
+        });
+    db = getFirestore(firebaseApp);
+  } catch (error) {
+    firebaseInitializationError = error instanceof Error
+      ? error
+      : new Error('Firebase initialization failed.');
+    console.error('[Firebase] Initialization failed', {
+      message: firebaseInitializationError.message,
+    });
+    firebaseApp = null;
+    auth = null;
+    db = null;
+  }
+
+  return { auth, db };
 }
-
-export const auth = firebaseAuth;
-
-export const db: Firestore | null = firebaseApp
-  ? getFirestore(firebaseApp)
-  : null;
 
 /**
  * Returns an existing user's private-space profile without provisioning users.

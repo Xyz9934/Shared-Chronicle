@@ -6,9 +6,19 @@ export const supabaseBucket = (process.env.EXPO_PUBLIC_SUPABASE_STORAGE_BUCKET ?
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey && supabaseBucket);
 
-export const supabase: SupabaseClient | null = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+let supabaseClient: SupabaseClient | null = null;
+
+if (isSupabaseConfigured) {
+  try {
+    supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+  } catch (error) {
+    console.error('[Supabase] Initialization failed', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+}
+
+export const supabase = supabaseClient;
 
 export async function uploadMedia(
   uri: string,

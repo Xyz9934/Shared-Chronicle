@@ -30,15 +30,21 @@ function decodeBase64Url(value: string): Uint8Array {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-const nativeNotifications = getNotifications();
-if (nativeNotifications) {
-  nativeNotifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldPlaySound: false,
-      shouldSetBadge: true,
-      shouldShowBanner: false,
-      shouldShowList: false,
-    }),
+try {
+  const nativeNotifications = getNotifications();
+  if (nativeNotifications) {
+    nativeNotifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldPlaySound: false,
+        shouldSetBadge: true,
+        shouldShowBanner: false,
+        shouldShowList: false,
+      }),
+    });
+  }
+} catch (error) {
+  console.error('[Notifications] Initialization failed', {
+    message: error instanceof Error ? error.message : 'Unknown error',
   });
 }
 

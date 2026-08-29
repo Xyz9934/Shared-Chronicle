@@ -43,7 +43,7 @@
     "experiments": {
       "baseUrl": "/",
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": false
     },
     "extra": {
       "eas": {
