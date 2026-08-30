@@ -267,14 +267,15 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
   }, [currentUser]);
 
   useEffect(() => {
-    if (!auth || !db) {
+    const initialized = initializeFirebase();
+    const currentAuth = initialized.auth;
+    if (!currentAuth || !initialized.db) {
       setError(firebaseInitializationError
         ? 'Firebase initialization failed. Check the app configuration and restart the app.'
         : 'Firebase configuration is missing. Add the requested environment values and restart the app.');
       setIsLoading(false);
       return undefined;
     }
-    const currentAuth = auth;
     return onAuthStateChanged(currentAuth, async (firebaseUser) => {
       setError('');
       if (!firebaseUser) {

@@ -17,7 +17,10 @@
       "supportsTablet": false
     },
     "android": {
-      "package": "com.tommy_tech.pvtwrld"
+      "package": "com.tommy_tech.pvtwrld",
+      "permissions": [
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon_2.png",
