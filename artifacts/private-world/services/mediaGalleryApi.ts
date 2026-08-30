@@ -53,9 +53,9 @@ export const mediaSpaceId = (process.env.EXPO_PUBLIC_PRIVATE_SPACE_ID ?? '').tri
 export const isMediaApiConfigured = Boolean(mediaApiBaseUrl && mediaSpaceId);
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!auth?.currentUser) throw new Error('A verified Firebase session is required.');
-  const token = await auth.currentUser.getIdToken();
-  const response = await fetch(`${mediaApiBaseUrl}${path}`, {
+  const user = auth?.currentUser;
+  if (!user) throw new Error('A verified Firebase session is required.');
+  const makeRequest = (token: string) => fetch(`${mediaApiBaseUrl}${path}`, {
     ...init,
     headers: {
       Accept: 'application/json',
@@ -64,6 +64,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
+  const token = await user.getIdToken();
+  let response = await makeRequest(token);
+  if (response.status === 401) {
+    const refreshedToken = await user.getIdToken(true);
+    if (refreshedToken !== token) response = await makeRequest(refreshedToken);
+  }
   let data: unknown = null;
   try {
     data = await response.json();
