@@ -158,6 +158,9 @@ importers:
         specifier: ^0.4.1
         version: 0.4.1
     devDependencies:
+      '@babel/traverse':
+        specifier: 7.29.7
+        version: 7.29.7(supports-color@8.1.1)
       babel-preset-expo:
         specifier: 54.0.12
         version: 54.0.12(@babel/core@7.29.7(supports-color@8.1.1))(@babel/runtime@7.29.7)(expo@54.0.37)(react-refresh@0.18.0)(supports-color@8.1.1)
