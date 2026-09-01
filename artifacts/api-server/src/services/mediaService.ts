@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { MediaRecord, MediaStatus, MediaType, SyncSettings } from "../types/media";
+import { logger } from "../lib/logger";
 import { getSupabaseAdmin } from "./supabaseAdmin";
 
 const bucket = () => process.env.SUPABASE_MEDIA_BUCKET?.trim() || "private-world-media";
@@ -78,15 +79,37 @@ function mapSettings(row: unknown, spaceId: string, userId: string): SyncSetting
 }
 
 async function assertMembership(spaceId: string, userId: string): Promise<void> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("space_members")
-    .select("user_id")
-    .eq("space_id", spaceId)
-    .eq("user_id", userId)
-    .maybeSingle();
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("space_members")
+      .select("user_id")
+      .eq("space_id", spaceId)
+      .eq("user_id", userId)
+      .maybeSingle();
 
-  if (error) throw new MediaServiceError("STORAGE_ERROR", `Could not verify space membership: ${error.message}`);
-  if (!data) throw new MediaServiceError("FORBIDDEN", "You are not a member of this private space.");
+    if (error) throw error;
+    if (!data) throw new MediaServiceError("FORBIDDEN", "You are not a member of this private space.");
+  } catch (error) {
+    if (error instanceof MediaServiceError) throw error;
+    const supabaseUrl = process.env.SUPABASE_URL?.trim() ?? "";
+    let upstreamUrl = "not-configured";
+    try {
+      upstreamUrl = new URL(supabaseUrl).origin;
+    } catch {
+      if (supabaseUrl) upstreamUrl = "invalid-url";
+    }
+    logger.error({
+      method: "GET",
+      upstreamUrl,
+      operation: "space-membership",
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : "Unknown network error",
+    }, "Supabase membership verification failed");
+    throw new MediaServiceError(
+      "STORAGE_ERROR",
+      `Could not verify space membership: ${error instanceof Error ? error.message : "Unknown network error"}`,
+    );
+  }
 }
 
 function validateMediaType(value: unknown): MediaType {

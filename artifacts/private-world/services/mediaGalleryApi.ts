@@ -55,6 +55,8 @@ export const isMediaApiConfigured = Boolean(mediaApiBaseUrl && mediaSpaceId);
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const user = auth?.currentUser;
   if (!user) throw new Error('A verified Firebase session is required.');
+  const method = init?.method ?? 'GET';
+  const url = `${mediaApiBaseUrl}${path}`;
   const makeRequest = (token: string) => fetch(`${mediaApiBaseUrl}${path}`, {
     ...init,
     headers: {
@@ -65,10 +67,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   const token = await user.getIdToken();
-  let response = await makeRequest(token);
+  let response: Response;
+  try {
+    response = await makeRequest(token);
+  } catch (error) {
+    console.error('[Media API] Request failed before receiving a response', {
+      url,
+      method,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+      errorMessage: error instanceof Error ? error.message : 'Unknown network error',
+    });
+    throw error;
+  }
   if (response.status === 401) {
     const refreshedToken = await user.getIdToken(true);
-    if (refreshedToken !== token) response = await makeRequest(refreshedToken);
+    if (refreshedToken !== token) {
+      try {
+        response = await makeRequest(refreshedToken);
+      } catch (error) {
+        console.error('[Media API] Refreshed request failed before receiving a response', {
+          url,
+          method,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+          errorMessage: error instanceof Error ? error.message : 'Unknown network error',
+        });
+        throw error;
+      }
+    }
   }
   let data: unknown = null;
   try {
@@ -80,6 +105,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const message = data && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
       ? data.error
       : `Media service returned HTTP ${response.status}.`;
+    console.error('[Media API] Server returned an error response', { url, method, status: response.status });
     throw new Error(message);
   }
   return data as T;
