@@ -17,8 +17,8 @@
     "@babel/generator": "7.29.7",
     "@babel/traverse": "7.29.7",
     "@expo-google-fonts/inter": "^0.4.0",
-    "@expo/config-plugins": "~54.0.5",
     "@expo/cli": "54.0.23",
+    "@expo/config-plugins": "~54.0.5",
     "@expo/ngrok": "^4.1.0",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -66,13 +66,16 @@
   },
   "dependencies": {
     "@firebase/auth": "1.13.4",
+    "@private-world/media-sync": "file:./modules/media-sync",
+    "@supabase/supabase-js": "^2.57.4",
+    "expo-audio": "~1.1.1",
     "expo-av": "~16.0.8",
     "expo-document-picker": "~14.0.8",
+    "expo-file-system": "~19.0.24",
     "expo-notifications": "~0.32.17",
     "expo-server-sdk": "^3.15.0",
     "firebase": "^12.17.1",
     "firebase-admin": "^11.11.0",
-    "@supabase/supabase-js": "^2.57.4",
     "web-push": "^3.6.7"
   }
 }

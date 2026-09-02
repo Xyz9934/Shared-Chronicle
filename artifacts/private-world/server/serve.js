@@ -12,6 +12,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Expo } = require('expo-server-sdk');
 const webpush = require('web-push');
 
@@ -179,12 +180,235 @@ try {
   adminInitialized = false;
 }
 
+const MUSIC_BUCKET = 'private-world-media';
+const MUSIC_MAX_BYTES = 100 * 1024 * 1024;
+const MUSIC_EXTENSIONS = new Set(['mp3', 'm4a', 'aac', 'wav', 'ogg', 'opus']);
+const MUSIC_MIME_TYPES = new Set(['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/ogg', 'audio/opus', 'application/octet-stream']);
+let musicSupabase;
+
+function musicJson(res, status, payload, req) {
+  res.writeHead(status, { 'content-type': 'application/json', ...getAuthCorsHeaders(req) });
+  res.end(JSON.stringify(payload));
+}
+
+function readJson(req, maxBytes = 16 * 1024) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (Buffer.byteLength(body) > maxBytes) {
+        reject(new Error('Request body is too large.'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      try { resolve(JSON.parse(body || '{}')); } catch { reject(new Error('Invalid JSON body.')); }
+    });
+    req.on('error', reject);
+  });
+}
+
+function privateMusicService() {
+  if (musicSupabase) return musicSupabase;
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Private music storage is not configured.');
+  }
+  // Service role credentials never leave this server. All caller authorization
+  // happens before a storage/database operation is made.
+  const { createClient } = require('@supabase/supabase-js');
+  musicSupabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return musicSupabase;
+}
+
+function cleanMusicText(value, limit) {
+  return typeof value === 'string' ? value.trim().replace(/[\u0000-\u001f\u007f]/g, '').slice(0, limit) : '';
+}
+
+function musicExtension(filename) {
+  const match = /\.([a-z0-9]+)$/i.exec(filename);
+  return match?.[1]?.toLowerCase() || '';
+}
+
+async function requirePrivateMusicMember(req) {
+  if (!adminInitialized) throw Object.assign(new Error('Music service is not configured.'), { status: 503 });
+  const authorization = req.headers.authorization || '';
+  if (!authorization.startsWith('Bearer ')) throw Object.assign(new Error('Unauthorized'), { status: 401 });
+  const decoded = await admin.auth().verifyIdToken(authorization.slice(7));
+  const profile = await admin.firestore().collection('users').doc(decoded.uid).get();
+  if (!profile.exists || !['OWNER', 'USER'].includes(profile.data()?.role)) throw Object.assign(new Error('Forbidden'), { status: 403 });
+  const spaceId = (process.env.PRIVATE_WORLD_SPACE_ID || '').trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(spaceId)) {
+    throw Object.assign(new Error('Private music space is not configured.'), { status: 503 });
+  }
+  const supabase = privateMusicService();
+  const { data: membership, error } = await supabase
+    .from('space_members')
+    .select('role')
+    .eq('space_id', spaceId)
+    .eq('user_id', decoded.uid)
+    .maybeSingle();
+  if (error) throw Object.assign(new Error('Could not verify music access.'), { status: 503 });
+  if (!membership) throw Object.assign(new Error('You do not have access to this music library.'), { status: 403 });
+  return { decoded, profile: profile.data(), spaceId, role: membership.role, supabase };
+}
+
+function mapMusicTrack(row, streamUrl) {
+  return {
+    id: row.id,
+    provider: 'private',
+    spaceId: row.space_id,
+    uploadedById: row.uploaded_by,
+    uploadedByName: row.uploaded_by_name || 'Private World member',
+    storagePath: row.storage_path,
+    originalFilename: row.original_filename,
+    title: row.title,
+    artist: row.artist || undefined,
+    album: row.album || undefined,
+    artworkUrl: row.artwork_path || undefined,
+    mimeType: row.mime_type,
+    fileSize: Number(row.file_size),
+    durationMs: row.duration_ms == null ? undefined : Number(row.duration_ms),
+    createdAt: row.created_at,
+    ...(streamUrl ? { streamUrl } : {}),
+  };
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host}`);
   let pathname = url.pathname;
 
   if (basePath && pathname.startsWith(basePath)) {
     pathname = pathname.slice(basePath.length) || '/';
+  }
+
+  if (pathname.startsWith('/api/music') && req.method === 'OPTIONS') {
+    res.writeHead(204, getAuthCorsHeaders(req));
+    res.end();
+    return;
+  }
+
+  if (pathname === '/api/music' && req.method === 'GET') {
+    void (async () => {
+      try {
+        const { supabase, spaceId } = await requirePrivateMusicMember(req);
+        const { data, error } = await supabase.from('private_world_music').select('*').eq('space_id', spaceId).order('created_at', { ascending: false });
+        if (error) throw Object.assign(new Error('Could not load the shared library.'), { status: 503 });
+        const items = await Promise.all(data.map(async (row) => {
+          const { data: signed, error: signedError } = await supabase.storage.from(MUSIC_BUCKET).createSignedUrl(row.storage_path, 10 * 60);
+          return mapMusicTrack(row, signedError ? undefined : signed?.signedUrl);
+        }));
+        musicJson(res, 200, { items }, req);
+      } catch (error) {
+        musicJson(res, error?.status || 500, { error: error?.message || 'Music service error.' }, req);
+      }
+    })();
+    return;
+  }
+
+  if (pathname === '/api/music/upload-ticket' && req.method === 'POST') {
+    void (async () => {
+      try {
+        const { supabase, spaceId } = await requirePrivateMusicMember(req);
+        const payload = await readJson(req);
+        const filename = cleanMusicText(payload.filename, 180);
+        const extension = musicExtension(filename);
+        const mimeType = cleanMusicText(payload.mimeType, 100).toLowerCase();
+        const fileSize = Number(payload.fileSize);
+        if (!filename || !MUSIC_EXTENSIONS.has(extension) || !MUSIC_MIME_TYPES.has(mimeType)) throw Object.assign(new Error('Unsupported audio type.'), { status: 400 });
+        if (!Number.isFinite(fileSize) || fileSize < 1 || fileSize > MUSIC_MAX_BYTES) throw Object.assign(new Error('Songs must be between 1 byte and 100 MB.'), { status: 400 });
+        const id = crypto.randomUUID();
+        const path = `spaces/${spaceId}/music/${id}.${extension}`;
+        const { data, error } = await supabase.storage.from(MUSIC_BUCKET).createSignedUploadUrl(path, { upsert: false });
+        if (error || !data?.token) throw Object.assign(new Error('Could not prepare the audio upload.'), { status: 503 });
+        musicJson(res, 201, { id, path, token: data.token }, req);
+      } catch (error) {
+        musicJson(res, error?.status || 500, { error: error?.message || 'Could not prepare the upload.' }, req);
+      }
+    })();
+    return;
+  }
+
+  if (pathname === '/api/music' && req.method === 'POST') {
+    void (async () => {
+      try {
+        const { decoded, profile, supabase, spaceId } = await requirePrivateMusicMember(req);
+        const payload = await readJson(req);
+        const id = cleanMusicText(payload.id, 36);
+        const filename = cleanMusicText(payload.filename, 180);
+        const extension = cleanMusicText(payload.extension, 8).toLowerCase();
+        const mimeType = cleanMusicText(payload.mimeType, 100).toLowerCase();
+        const title = cleanMusicText(payload.title, 180);
+        if (!/^[0-9a-f-]{36}$/i.test(id) || !title || extension !== musicExtension(filename) || !MUSIC_EXTENSIONS.has(extension) || !MUSIC_MIME_TYPES.has(mimeType)) {
+          throw Object.assign(new Error('Invalid music metadata.'), { status: 400 });
+        }
+        const storagePath = `spaces/${spaceId}/music/${id}.${extension}`;
+        const { data: objects, error: listError } = await supabase.storage.from(MUSIC_BUCKET).list(`spaces/${spaceId}/music`, { search: `${id}.` });
+        const object = objects?.find((item) => item.name === `${id}.${extension}`);
+        const actualSize = Number(object?.metadata?.size);
+        const actualMime = typeof object?.metadata?.mimetype === 'string' ? object.metadata.mimetype.toLowerCase() : '';
+        if (listError || !object || !Number.isFinite(actualSize) || actualSize < 1 || actualSize > MUSIC_MAX_BYTES || !MUSIC_MIME_TYPES.has(actualMime)) {
+          throw Object.assign(new Error('Uploaded audio did not pass validation.'), { status: 400 });
+        }
+        const uploaderName = cleanMusicText(profile?.name, 100) || decoded.name || 'Private World member';
+        const { data: row, error } = await supabase.from('private_world_music').insert({
+          id,
+          space_id: spaceId,
+          uploaded_by: decoded.uid,
+          uploaded_by_name: uploaderName,
+          storage_path: storagePath,
+          original_filename: filename,
+          title,
+          artist: cleanMusicText(payload.artist, 160) || null,
+          album: cleanMusicText(payload.album, 160) || null,
+          mime_type: actualMime,
+          file_size: actualSize,
+          duration_ms: Number.isFinite(Number(payload.durationMs)) && Number(payload.durationMs) >= 0 ? Math.floor(Number(payload.durationMs)) : null,
+        }).select().single();
+        if (error) throw Object.assign(new Error('Could not save music metadata.'), { status: 503 });
+        const { data: signed } = await supabase.storage.from(MUSIC_BUCKET).createSignedUrl(storagePath, 10 * 60);
+        musicJson(res, 201, { item: mapMusicTrack(row, signed?.signedUrl) }, req);
+      } catch (error) {
+        musicJson(res, error?.status || 500, { error: error?.message || 'Could not save this song.' }, req);
+      }
+    })();
+    return;
+  }
+
+  const musicMatch = /^\/api\/music\/([0-9a-f-]{36})(?:\/(download-url))?$/i.exec(pathname);
+  if (musicMatch && req.method === 'GET' && musicMatch[2] === 'download-url') {
+    void (async () => {
+      try {
+        const { supabase, spaceId } = await requirePrivateMusicMember(req);
+        const { data: row, error } = await supabase.from('private_world_music').select('storage_path').eq('id', musicMatch[1]).eq('space_id', spaceId).maybeSingle();
+        if (error || !row) throw Object.assign(new Error('Song not found.'), { status: 404 });
+        const { data: signed, error: signedError } = await supabase.storage.from(MUSIC_BUCKET).createSignedUrl(row.storage_path, 10 * 60);
+        if (signedError || !signed?.signedUrl) throw Object.assign(new Error('Could not prepare the download.'), { status: 503 });
+        musicJson(res, 200, { url: signed.signedUrl }, req);
+      } catch (error) {
+        musicJson(res, error?.status || 500, { error: error?.message || 'Could not prepare the download.' }, req);
+      }
+    })();
+    return;
+  }
+
+  if (musicMatch && req.method === 'DELETE' && !musicMatch[2]) {
+    void (async () => {
+      try {
+        const { decoded, role, supabase, spaceId } = await requirePrivateMusicMember(req);
+        const { data: row, error } = await supabase.from('private_world_music').select('storage_path,uploaded_by').eq('id', musicMatch[1]).eq('space_id', spaceId).maybeSingle();
+        if (error || !row) throw Object.assign(new Error('Song not found.'), { status: 404 });
+        if (row.uploaded_by !== decoded.uid && role !== 'OWNER') throw Object.assign(new Error('Only the uploader or space owner can delete this song.'), { status: 403 });
+        const { error: deleteError } = await supabase.from('private_world_music').delete().eq('id', musicMatch[1]).eq('space_id', spaceId);
+        if (deleteError) throw Object.assign(new Error('Could not delete the song.'), { status: 503 });
+        await supabase.storage.from(MUSIC_BUCKET).remove([row.storage_path]);
+        musicJson(res, 200, { deleted: true }, req);
+      } catch (error) {
+        musicJson(res, error?.status || 500, { error: error?.message || 'Could not delete the song.' }, req);
+      }
+    })();
+    return;
   }
 
   if (pathname === '/' || pathname === '/manifest') {

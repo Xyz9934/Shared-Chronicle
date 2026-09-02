@@ -24,6 +24,8 @@ import {
 import { auth, db, ensureUserProfile, firebaseInitializationError, initializeFirebase, isFirebaseConfigured } from '@/services/firebase';
 import { notifyNewChatMessage, registerForPushNotificationsAsync, registerWebPushNotificationsAsync } from '@/services/notifications';
 import { uploadMedia } from '@/services/supabase';
+import { deletePrivateMusic, listPrivateMusic, uploadPrivateMusic } from '@/services/music/privateMusicApi';
+import type { PrivateMusicTrack } from '@/services/music/types';
 
 const authApiBaseUrl = (process.env.EXPO_PUBLIC_AUTH_API_URL ?? 'https://shared-chronicle--faizaniqubal206.replit.app').trim().replace(/\/+$/, '');
 
@@ -145,15 +147,7 @@ export type CloudLetter = {
   openedBy: string[];
 };
 
-export type CloudSong = {
-  id: string;
-  title: string;
-  artist: string;
-  audioUrl: string;
-  coverUrl?: string;
-  uploadedBy: string;
-  createdAt: string;
-};
+export type CloudSong = PrivateMusicTrack;
 
 type CloudContextValue = {
   currentUser: CloudUser | null;
@@ -184,7 +178,9 @@ type CloudContextValue = {
   deleteTimeline: (id: string) => Promise<void>;
   addLetter: (input: { title: string; message: string; date: string; photoUri?: string }, onProgress?: (value: number) => void) => Promise<void>;
   markLetterOpened: (id: string) => Promise<void>;
-  addSong: (input: { title: string; artist: string; audioUri: string; coverUri?: string }, onProgress?: (value: number) => void) => Promise<void>;
+  addSong: (input: { title: string; artist?: string; album?: string; audioUri: string; filename: string; mimeType?: string | null; fileSize?: number | null }, onProgress?: (value: number) => void) => Promise<void>;
+  deleteSong: (id: string) => Promise<void>;
+  refreshSongs: () => Promise<void>;
   updateSettings: (input: Partial<Omit<CloudSettings, 'id'>>) => Promise<void>;
   updateProfile: (input: Partial<Pick<CloudUser, 'name' | 'photoUrl'>>) => Promise<void>;
   uploadAsset: (uri: string, path: string, onProgress?: (value: number) => void) => Promise<string>;
@@ -379,14 +375,25 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
           return { id: item.id, title: data.title ?? '', message: data.message ?? '', date: data.date ?? '', authorId: data.authorId ?? '', authorName: data.authorName ?? '', photoUrl: data.photoUrl, openedBy: asStringArray(data.openedBy) };
         }));
       }, () => setError('Unable to sync private letters right now.')),
-      onSnapshot(query(collection(db, 'songs'), orderBy('createdAt', 'desc')), (snapshot) => {
-        setSongs(snapshot.docs.map((item) => {
-          const data = item.data();
-          return { id: item.id, title: data.title ?? '', artist: data.artist ?? '', audioUrl: data.audioUrl ?? '', coverUrl: data.coverUrl, uploadedBy: data.uploadedBy ?? '', createdAt: toIso(data.createdAt) };
-        }));
-      }, () => setError('Unable to sync the music shelf right now.')),
     ];
-    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+    let cancelled = false;
+    const syncMusic = async () => {
+      try {
+        const next = await listPrivateMusic();
+        if (!cancelled) setSongs(next);
+      } catch (musicError) {
+        // The rest of Private World remains usable when the optional music API
+        // has not yet been configured on a deployment.
+        console.warn('[Music] Shared library sync failed', musicError instanceof Error ? musicError.message : 'Unknown error');
+      }
+    };
+    void syncMusic();
+    const musicInterval = setInterval(() => void syncMusic(), 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(musicInterval);
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
   }, [currentUser]);
 
   const requireCloud = () => {
@@ -570,11 +577,29 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     await updateDoc(doc(firestore, 'letters', id), { openedBy: Array.from(new Set([...(letter?.openedBy ?? []), user.id])) });
   };
 
-  const addSong = async (input: { title: string; artist: string; audioUri: string; coverUri?: string }, onProgress?: (value: number) => void) => {
-    const { user, firestore } = requireCloud();
-    const audioUrl = await uploadAsset(input.audioUri, `songs/${user.id}/${Date.now()}.audio`, onProgress);
-    const coverUrl = input.coverUri ? await uploadAsset(input.coverUri, `songs/${user.id}/${Date.now()}.cover`) : '';
-    await addDoc(collection(firestore, 'songs'), { title: input.title.trim(), artist: input.artist.trim(), audioUrl, ...(coverUrl ? { coverUrl } : {}), uploadedBy: user.name, createdAt: serverTimestamp() });
+  const refreshSongs = async () => {
+    const next = await listPrivateMusic();
+    setSongs(next);
+  };
+
+  const addSong = async (input: { title: string; artist?: string; album?: string; audioUri: string; filename: string; mimeType?: string | null; fileSize?: number | null }, onProgress?: (value: number) => void) => {
+    requireCloud();
+    const item = await uploadPrivateMusic({
+      uri: input.audioUri,
+      filename: input.filename,
+      mimeType: input.mimeType,
+      fileSize: input.fileSize,
+      title: input.title,
+      artist: input.artist,
+      album: input.album,
+    }, onProgress);
+    setSongs((current) => [item, ...current.filter((song) => song.id !== item.id)]);
+  };
+
+  const deleteSong = async (id: string) => {
+    requireCloud();
+    await deletePrivateMusic(id);
+    setSongs((current) => current.filter((song) => song.id !== id));
   };
 
   const updateSettings = async (input: Partial<Omit<CloudSettings, 'id'>>) => {
@@ -618,6 +643,8 @@ export function CloudProvider({ children }: { children: React.ReactNode }) {
     addLetter,
     markLetterOpened,
     addSong,
+    deleteSong,
+    refreshSongs,
     updateSettings,
     updateProfile,
     uploadAsset,

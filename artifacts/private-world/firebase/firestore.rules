@@ -86,9 +86,17 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
 
-    match /songs/{songId} {
-      allow read, create: if hasPrivateProfile();
-      allow update, delete: if isOwner();
+    // Audio metadata and bytes are stored in Supabase behind the trusted music
+    // API. Firestore holds intention-only room state, never audio URLs or
+    // Spotify OAuth credentials.
+    match /music_room/{roomId} {
+      allow read: if hasPrivateProfile();
+      allow create, update: if hasPrivateProfile()
+        && request.resource.data.keys().hasOnly(['provider', 'trackId', 'playbackState', 'positionMs', 'updatedBy', 'updatedAt'])
+        && request.resource.data.provider in ['private', 'spotify']
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.positionMs is number;
+      allow delete: if isOwner();
     }
   }
 }

@@ -14,7 +14,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
     },
     "android": {
       "package": "com.tommy_tech.pvtwrld",
@@ -35,6 +40,12 @@
       ],
       "expo-font",
       "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false
+        }
+      ],
       "./plugins/withMediaSync.js",
       [
         "expo-notifications",

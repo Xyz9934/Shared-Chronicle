@@ -13,7 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
@@ -24,6 +24,9 @@ import { useCloudApp, type CloudLetter, type CloudMemory, type CloudPhoto, type 
 import colors from '@/constants/colors';
 import { subscribeToNotificationResponses } from '@/services/notifications';
 import OurMemoriesScreen from '@/components/memories/OurMemoriesScreen';
+import { getCachedMusicUri, downloadPrivateMusic, removePrivateMusicDownload } from '@/services/music/privateMusicCache';
+import { getPrivateMusicDownloadUrl } from '@/services/music/privateMusicApi';
+import { isSupportedPrivateAudio, type PrivateMusicTrack } from '@/services/music/types';
 
 const c = colors.light;
 type Icon = keyof typeof Feather.glyphMap;
@@ -259,34 +262,72 @@ function Letters({ openComposer }: { openComposer: () => void }) {
   return <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}><View style={styles.pageHeading}><View><Text style={styles.eyebrow}>Words to keep</Text><Text style={styles.pageTitle}>Letters</Text></View><IconButton icon="plus" label="Write a letter" onPress={openComposer} color={c.primary} /></View><Text style={styles.pageDescription}>A slower way to say what matters.</Text>{letters.length ? letters.map((letter) => { const isOpen = opened === letter.id; return <Pressable key={letter.id} onPress={() => void open(letter)} style={styles.letterCard}><Animated.View style={[styles.envelope, isOpen && { transform: [{ scale: animation.interpolate({ inputRange: [0, 1], outputRange: [1, 1.02] }) }, { rotate: animation.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-2deg'] }) }] }]}><Feather name="mail" size={26} color={c.primary} /></Animated.View><View style={{ flex: 1 }}><Text style={styles.letterDate}>{niceDate(letter.date)} · {letter.authorName}</Text><Text style={styles.letterTitle}>{letter.title}</Text>{isOpen ? <Text style={styles.letterMessage}>{letter.message}</Text> : <Text style={styles.letterHint}>{letter.openedBy.includes(currentUser?.id ?? '') ? 'Read again' : 'Tap to open the envelope'}</Text>}</View><Feather name={isOpen ? 'chevron-up' : 'chevron-down'} size={18} color={c.mutedForeground} /></Pressable>; }) : <Empty icon="mail" title="No letters yet" body="Write something that deserves more than a text." />}</ScrollView>;
 }
 
-function Music() {
-  const { songs, addSong } = useCloudApp();
+function Music({ openComposer }: { openComposer: () => void }) {
+  const { songs, currentUser, deleteSong } = useCloudApp();
   const [playing, setPlaying] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
-  const sound = useRef<Audio.Sound | null>(null);
+  const [queue, setQueue] = useState<string[]>([]);
+  const [repeat, setRepeat] = useState(false);
+  const [shuffle, setShuffle] = useState(false);
+  const [downloads, setDownloads] = useState<Record<string, boolean>>({});
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const sound = useRef<AudioPlayer | null>(null);
   const spin = useRef(new Animated.Value(0)).current;
-  useEffect(() => () => { void sound.current?.unloadAsync(); }, []);
-  const play = async (id: string, url: string) => {
-    if (playing === id) { await sound.current?.pauseAsync(); setPlaying(null); return; }
-    await sound.current?.unloadAsync();
-    const created = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: true }, (status) => { if (status.isLoaded) setProgress(status.positionMillis / Math.max(status.durationMillis || 1, 1)); });
-    sound.current = created.sound; setPlaying(id);
+  useEffect(() => {
+    void setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'duckOthers', shouldRouteThroughEarpiece: false });
+    void Promise.all(songs.map(async (song) => [song.id, await getCachedMusicUri(song.id)] as const)).then((entries) => setDownloads(Object.fromEntries(entries.map(([id, uri]) => [id, Boolean(uri)]))));
+    const player = createAudioPlayer(null, { updateInterval: 400, keepAudioSessionActive: true });
+    sound.current = player;
+    const subscription = player.addListener('playbackStatusUpdate', (status) => {
+      setProgress(status.currentTime / Math.max(status.duration || 1, 1));
+      if (status.didJustFinish) setPlaying(null);
+    });
+    return () => { subscription.remove(); player.clearLockScreenControls(); player.remove(); sound.current = null; };
+  }, []);
+  const adjacent = async (currentId: string, delta: number) => {
+    const ids = queue.length ? queue : songs.map((song) => song.id);
+    const index = ids.indexOf(currentId);
+    const nextId = ids[(index + delta + ids.length) % ids.length];
+    const track = songs.find((song) => song.id === nextId);
+    if (track) await play(track);
+  };
+  const play = async (song: PrivateMusicTrack) => {
+    const player = sound.current;
+    if (!player) return;
+    if (playing === song.id) { player.pause(); setPlaying(null); return; }
+    const cached = await getCachedMusicUri(song.id);
+    const url = cached ?? song.streamUrl ?? await getPrivateMusicDownloadUrl(song.id);
+    player.replace({ uri: url });
+    player.loop = repeat;
+    player.setActiveForLockScreen(true, { title: song.title, artist: song.artist, albumTitle: song.album, artworkUrl: song.artworkUrl });
+    player.play();
+    setPlaying(song.id);
     Animated.loop(Animated.timing(spin, { toValue: 1, duration: 5000, easing: (value) => value, useNativeDriver: true })).start();
   };
-  const upload = async () => {
-    const picked = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true });
-    if (picked.canceled || !picked.assets[0]) return;
-    const asset = picked.assets[0];
-    await addSong({ title: asset.name.replace(/\.[^/.]+$/, ''), artist: 'Our private playlist', audioUri: asset.uri }, () => undefined);
+  const download = async (song: PrivateMusicTrack) => {
+    setDownloading(song.id);
+    try { await downloadPrivateMusic(song); setDownloads((current) => ({ ...current, [song.id]: true })); }
+    catch (error) { Alert.alert('Could not download', error instanceof Error ? error.message : 'Please try again.'); }
+    finally { setDownloading(null); }
   };
-  return <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}><View style={styles.pageHeading}><View><Text style={styles.eyebrow}>Your soundtrack</Text><Text style={styles.pageTitle}>Music</Text></View><IconButton icon="plus" label="Upload music" onPress={() => void upload()} color={c.primary} /></View><Text style={styles.pageDescription}>Songs that sound like the two of you.</Text>{songs.length ? songs.map((song) => <View key={song.id} style={styles.songCard}><Animated.View style={[styles.cd, playing === song.id && { transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>{song.coverUrl ? <Image source={{ uri: song.coverUrl }} style={styles.cdImage} /> : <Feather name="music" size={25} color="#fff" />}<View style={styles.cdHole} /></Animated.View><View style={{ flex: 1 }}><Text style={styles.songTitle}>{song.title}</Text><Text style={styles.songArtist}>{song.artist}</Text><View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${playing === song.id ? progress * 100 : 0}%` }]} /></View></View><IconButton icon={playing === song.id ? 'pause' : 'play'} label={playing === song.id ? 'Pause song' : 'Play song'} onPress={() => void play(song.id, song.audioUrl)} color={c.primary} /></View>) : <Empty icon="music" title="Your playlist is quiet" body="Upload an audio file and give this world a soundtrack." />}</ScrollView>;
+  return <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <View style={styles.pageHeading}><View><Text style={styles.eyebrow}>Your soundtrack</Text><Text style={styles.pageTitle}>Music</Text></View><IconButton icon="plus" label="Upload music" onPress={openComposer} color={c.primary} /></View>
+    <View style={styles.spotifyCard}><View style={styles.spotifyMark}><Feather name="music" size={19} color="#1ed760" /></View><View style={{ flex: 1 }}><Text style={styles.spotifyTitle}>Spotify</Text><Text style={styles.spotifyBody}>Account connection is separate from your shared uploads. Spotify audio is never copied or cached here.</Text></View><Text style={styles.spotifySetup}>Setup required</Text></View>
+    <View style={styles.musicSectionHeading}><Text style={styles.sectionTitle}>Shared library</Text><Button title="Upload song" icon="upload" onPress={openComposer} ghost /></View>
+    {songs.length ? songs.map((song) => <View key={song.id} style={styles.songCard}>
+      <Animated.View style={[styles.cd, playing === song.id && { transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>{song.artworkUrl ? <Image source={{ uri: song.artworkUrl }} style={styles.cdImage} /> : <Feather name="music" size={25} color="#fff" />}<View style={styles.cdHole} /></Animated.View>
+      <View style={{ flex: 1 }}><Text style={styles.songTitle}>{song.title}</Text><Text style={styles.songArtist}>{song.artist || 'Unknown artist'} · Added by {song.uploadedByName}</Text><View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${playing === song.id ? progress * 100 : 0}%` }]} /></View><View style={styles.songActions}><Pressable onPress={() => setQueue((current) => current.includes(song.id) ? current : [...current, song.id])}><Text style={styles.actionLink}>Add to queue</Text></Pressable><Pressable onPress={() => downloads[song.id] ? void removePrivateMusicDownload(song.id).then(() => setDownloads((current) => ({ ...current, [song.id]: false }))) : void download(song)}><Text style={styles.actionLink}>{downloading === song.id ? 'Downloading…' : downloads[song.id] ? 'Downloaded' : 'Download'}</Text></Pressable>{(currentUser?.id === song.uploadedById || currentUser?.role === 'OWNER') && <Pressable onPress={() => Alert.alert('Delete song?', 'This removes it from the shared library.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void deleteSong(song.id) }])}><Text style={styles.deleteLink}>Delete</Text></Pressable>}</View></View>
+      <IconButton icon={playing === song.id ? 'pause' : 'play'} label={playing === song.id ? 'Pause song' : 'Play song'} onPress={() => void play(song)} color={c.primary} />
+    </View>) : <Empty icon="music" title="Your playlist is quiet" body="Upload an MP3, M4A/AAC, WAV, OGG, or Opus file to give this world a soundtrack." />}
+    {songs.length > 0 && <View style={styles.nowPlaying}><Text style={styles.nowPlayingLabel}>Now playing</Text><Text style={styles.nowPlayingTitle}>{songs.find((song) => song.id === playing)?.title || 'Choose a song'}</Text><View style={styles.playerControls}><IconButton icon="skip-back" label="Previous song" onPress={() => playing && void adjacent(playing, -1)} /><IconButton icon={shuffle ? 'shuffle' : 'list'} label="Toggle shuffle" onPress={() => { setShuffle((value) => !value); setQueue((current) => shuffle ? current : [...songs.map((song) => song.id)].sort(() => Math.random() - 0.5)); }} color={shuffle ? c.primary : c.mutedForeground} /><IconButton icon={repeat ? 'repeat' : 'corner-down-right'} label="Toggle repeat" onPress={() => setRepeat((value) => !value)} color={repeat ? c.primary : c.mutedForeground} /><IconButton icon="skip-forward" label="Next song" onPress={() => playing && void adjacent(playing, 1)} /></View></View>}
+  </ScrollView>;
 }
 
 function Composer({ kind, onClose }: { kind: Exclude<ComposerKind, null>; onClose: () => void }) {
   const { addMemory, addPhoto, addTimeline, addLetter, addSong } = useCloudApp();
-  const [title, setTitle] = useState(''); const [description, setDescription] = useState(''); const [date, setDate] = useState(today()); const [caption, setCaption] = useState(''); const [artist, setArtist] = useState(''); const [uri, setUri] = useState(''); const [busy, setBusy] = useState(false); const [progress, setProgress] = useState(0); const [submitError, setSubmitError] = useState('');
+  const [title, setTitle] = useState(''); const [description, setDescription] = useState(''); const [date, setDate] = useState(today()); const [caption, setCaption] = useState(''); const [artist, setArtist] = useState(''); const [uri, setUri] = useState(''); const [audioName, setAudioName] = useState(''); const [audioMime, setAudioMime] = useState<string | null>(null); const [audioSize, setAudioSize] = useState<number | null>(null); const [busy, setBusy] = useState(false); const [progress, setProgress] = useState(0); const [submitError, setSubmitError] = useState('');
   const pickImage = async () => { const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.86, allowsEditing: true }); if (!result.canceled) setUri(result.assets[0].uri); };
-  const pickAudio = async () => { const result = await DocumentPicker.getDocumentAsync({ type: 'audio/*', copyToCacheDirectory: true }); if (!result.canceled) setUri(result.assets[0].uri); };
+  const pickAudio = async () => { const result = await DocumentPicker.getDocumentAsync({ type: ['audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/wav', 'audio/ogg', 'audio/opus'], copyToCacheDirectory: true }); if (result.canceled) return; const asset = result.assets[0]; if (!asset || !isSupportedPrivateAudio(asset.name, asset.mimeType)) { Alert.alert('Unsupported audio', 'Choose an MP3, M4A/AAC, WAV, OGG, or Opus file.'); return; } setUri(asset.uri); setAudioName(asset.name); setAudioMime(asset.mimeType ?? null); setAudioSize(asset.size ?? null); if (!title.trim()) setTitle(asset.name.replace(/\.[^/.]+$/, '')); };
   const submit = async () => {
     if (!title.trim() && kind !== 'photo') return Alert.alert('Add a title', 'Give this part of your world a name first.');
     if (!uri && ['photo', 'song'].includes(kind)) return Alert.alert('Choose a file', kind === 'photo' ? 'Choose a photo to upload.' : 'Choose an audio file to upload.');
@@ -296,7 +337,7 @@ function Composer({ kind, onClose }: { kind: Exclude<ComposerKind, null>; onClos
       if (kind === 'photo') await addPhoto({ uri, caption, date }, setProgress);
       if (kind === 'timeline') await addTimeline({ title, description, date, photoUri: uri || undefined }, setProgress);
       if (kind === 'letter') await addLetter({ title, message: description, date, photoUri: uri || undefined }, setProgress);
-      if (kind === 'song') await addSong({ title, artist, audioUri: uri }, setProgress);
+      if (kind === 'song') await addSong({ title, artist, audioUri: uri, filename: audioName, mimeType: audioMime, fileSize: audioSize }, setProgress);
       onClose();
     } catch (error) { const message = error instanceof Error ? error.message : 'Please try again.'; setSubmitError(message); Alert.alert('Could not save', message); } finally { setBusy(false); }
   };
@@ -351,7 +392,7 @@ export default function CloudPrivateWorldApp() {
   if (!currentUser) return <Login />;
   const unread = messages.filter((item) => item.senderId !== currentUser.id && !item.readBy.includes(currentUser.id)).length;
   const openComposer = (kind: Exclude<ComposerKind, null>) => setComposer(kind);
-  const screen = section === 'home' ? <Home go={setSection} openComposer={openComposer} /> : section === 'chat' ? <Chat /> : section === 'memories' ? <Memories openComposer={() => openComposer('memory')} onEdit={(item) => setEdit({ kind: 'memory', item })} /> : section === 'gallery' ? <Gallery openComposer={() => openComposer('photo')} onOpen={setPhoto} /> : section === 'timeline' ? <Timeline openComposer={() => openComposer('timeline')} onEdit={(item) => setEdit({ kind: 'timeline', item })} /> : section === 'letters' ? <Letters openComposer={() => openComposer('letter')} /> : <Music />;
+  const screen = section === 'home' ? <Home go={setSection} openComposer={openComposer} /> : section === 'chat' ? <Chat /> : section === 'memories' ? <Memories openComposer={() => openComposer('memory')} onEdit={(item) => setEdit({ kind: 'memory', item })} /> : section === 'gallery' ? <Gallery openComposer={() => openComposer('photo')} onOpen={setPhoto} /> : section === 'timeline' ? <Timeline openComposer={() => openComposer('timeline')} onEdit={(item) => setEdit({ kind: 'timeline', item })} /> : section === 'letters' ? <Letters openComposer={() => openComposer('letter')} /> : <Music openComposer={() => openComposer('song')} />;
   return <View style={[styles.root, { paddingTop: insets.top }]}><Header onSettings={() => setSettingsOpen(true)} onLogout={() => void logout()} />{notification ? <View style={styles.notification}><Feather name="message-circle" size={16} color={c.primary} /><Text numberOfLines={2} style={styles.notificationText}>{notification}</Text>{notificationPermission === 'default' && <Pressable onPress={() => void requestNotificationPermission()} style={styles.notificationAction}><Text style={styles.notificationActionText}>Enable</Text></Pressable>}<Pressable accessibilityLabel="Dismiss notification" onPress={dismissNotification} hitSlop={8}><Feather name="x" size={15} color={c.mutedForeground} /></Pressable></View> : null}<View style={styles.screen}>{screen}</View><Navigation section={section} onChange={setSection} unread={unread} />{composer && <Composer kind={composer} onClose={() => setComposer(null)} />}{edit && <EditSheet kind={edit.kind} item={edit.item} onClose={() => setEdit(null)} />}<SettingsSheet visible={settingsOpen} onClose={() => setSettingsOpen(false)} /><FullscreenPhoto photo={photo} onClose={() => setPhoto(null)} />{settings?.finalMessage ? <Text style={styles.finalMessage}>{settings.finalMessage}</Text> : null}</View>;
 }
 
@@ -367,6 +408,7 @@ const styles = StyleSheet.create({
   timelineRow: { flexDirection: 'row', gap: 12 }, timelineRail: { alignItems: 'center', width: 16 }, timelineDot: { backgroundColor: c.primary, borderColor: '#fff', borderRadius: 8, borderWidth: 3, height: 16, width: 16, zIndex: 1 }, timelineLine: { backgroundColor: c.border, flex: 1, marginTop: -1, width: 2 }, timelineCard: { backgroundColor: '#fff', borderColor: c.border, borderRadius: 18, borderWidth: 1, flex: 1, marginBottom: 13, padding: 15 }, timelineImage: { borderRadius: 12, height: 130, marginBottom: 12, width: '100%' },
   letterCard: { alignItems: 'flex-start', backgroundColor: '#fff', borderColor: c.border, borderRadius: 20, borderWidth: 1, flexDirection: 'row', gap: 12, marginBottom: 12, padding: 15 }, envelope: { alignItems: 'center', backgroundColor: c.secondary, borderRadius: 18, height: 52, justifyContent: 'center', width: 52 }, letterDate: { color: c.primary, fontSize: 10, fontWeight: '800' }, letterTitle: { color: c.foreground, fontSize: 16, fontWeight: '800', marginTop: 4 }, letterHint: { color: c.mutedForeground, fontSize: 12, marginTop: 5 }, letterMessage: { color: c.foreground, fontSize: 14, lineHeight: 21, marginTop: 8 },
   songCard: { alignItems: 'center', backgroundColor: '#fff', borderColor: c.border, borderRadius: 20, borderWidth: 1, flexDirection: 'row', gap: 13, marginBottom: 12, padding: 13 }, cd: { alignItems: 'center', backgroundColor: '#b95a79', borderColor: '#e9bdca', borderRadius: 34, borderWidth: 4, height: 68, justifyContent: 'center', overflow: 'hidden', width: 68 }, cdImage: { height: '100%', width: '100%' }, cdHole: { backgroundColor: '#fff4f5', borderColor: '#b95a79', borderRadius: 6, borderWidth: 2, height: 12, position: 'absolute', width: 12 }, songTitle: { color: c.foreground, fontSize: 15, fontWeight: '800' }, songArtist: { color: c.mutedForeground, fontSize: 12, marginTop: 3 }, progressTrack: { backgroundColor: c.muted, borderRadius: 3, height: 4, marginTop: 10, overflow: 'hidden', width: '100%' }, progressFill: { backgroundColor: c.primary, borderRadius: 3, height: '100%' },
+  spotifyCard: { alignItems: 'center', backgroundColor: '#142b20', borderRadius: 19, flexDirection: 'row', gap: 11, marginBottom: 21, padding: 14 }, spotifyMark: { alignItems: 'center', backgroundColor: '#0a1e12', borderRadius: 18, height: 36, justifyContent: 'center', width: 36 }, spotifyTitle: { color: '#fff', fontSize: 14, fontWeight: '800' }, spotifyBody: { color: '#b5d8c3', fontSize: 10, lineHeight: 14, marginTop: 2 }, spotifySetup: { color: '#9be6ae', fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, musicSectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }, songActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 11, marginTop: 9 }, nowPlaying: { backgroundColor: '#fff', borderColor: c.border, borderRadius: 20, borderWidth: 1, marginTop: 4, padding: 15 }, nowPlayingLabel: { color: c.primary, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase' }, nowPlayingTitle: { color: c.foreground, fontSize: 16, fontWeight: '800', marginTop: 3 }, playerControls: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-around', marginTop: 7 },
   chat: { flex: 1, paddingHorizontal: 20 }, chatIntro: { alignItems: 'center', flexDirection: 'row', gap: 11, paddingBottom: 12 }, chatAvatar: { alignItems: 'center', backgroundColor: c.secondary, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 }, messageList: { gap: 10, paddingBottom: 16, paddingTop: 10 }, messageRow: { alignItems: 'flex-start', flexDirection: 'row' }, messageRowMine: { justifyContent: 'flex-end' }, bubble: { borderRadius: 19, maxWidth: '83%', paddingHorizontal: 14, paddingVertical: 10 }, bubbleTheirs: { backgroundColor: '#fff', borderColor: c.border, borderWidth: 1, borderBottomLeftRadius: 5 }, bubbleMine: { backgroundColor: c.primary, borderBottomRightRadius: 5 }, bubbleUnread: { borderColor: c.primary, borderWidth: 2 }, bubbleText: { color: c.foreground, fontSize: 14, lineHeight: 20 }, bubbleTextMine: { color: '#fff' }, bubbleMeta: { alignItems: 'center', flexDirection: 'row', gap: 5, justifyContent: 'flex-end', marginTop: 4 }, bubbleTime: { color: c.mutedForeground, fontSize: 9 }, bubbleTimeMine: { color: '#f7d9e1' }, messageTicks: { alignItems: 'center', flexDirection: 'row', height: 14 }, secondTick: { marginLeft: -7 }, unreadLabel: { color: c.primary, fontSize: 8, fontWeight: '900' }, composer: { alignItems: 'center', backgroundColor: '#fff', borderColor: c.border, borderRadius: 20, borderWidth: 1, flexDirection: 'row', marginBottom: 14, padding: 6 }, composerInput: { color: c.foreground, flex: 1, fontSize: 14, minHeight: 38, paddingHorizontal: 10 }, send: { alignItems: 'center', backgroundColor: c.primary, borderRadius: 17, height: 34, justifyContent: 'center', width: 34 }, sendDisabled: { opacity: 0.4 },
   modalBackdrop: { backgroundColor: '#271b2488', flex: 1, justifyContent: 'flex-end' }, sheet: { backgroundColor: c.background, borderTopLeftRadius: 30, borderTopRightRadius: 30, maxHeight: '92%', paddingHorizontal: 20, paddingTop: 10 }, sheetHandle: { alignSelf: 'center', backgroundColor: c.border, borderRadius: 3, height: 5, width: 46 }, sheetHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 16 }, sheetTitle: { color: c.foreground, fontSize: 22, fontWeight: '800', marginTop: 3 }, sheetScroll: { paddingBottom: 30 }, uploadProgress: { backgroundColor: c.muted, borderRadius: 5, height: 7, marginBottom: 12, overflow: 'hidden' }, progressText: { color: c.mutedForeground, fontSize: 10, marginTop: 10 }, settingsNote: { color: c.mutedForeground, fontSize: 13, lineHeight: 19, marginBottom: 18 }, formSection: { color: c.primary, fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 12, marginTop: 3, textTransform: 'uppercase' },
   viewer: { alignItems: 'center', backgroundColor: '#181016', flex: 1, justifyContent: 'center', padding: 20 }, fullImage: { height: '76%', width: '100%' }, viewerCaption: { color: '#fff', fontSize: 13, marginTop: 14, textAlign: 'center' }, finalMessage: { bottom: 5, color: c.mutedForeground, fontSize: 9, position: 'absolute', right: 16 },
