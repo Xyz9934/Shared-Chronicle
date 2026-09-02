@@ -103,8 +103,8 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
   try {
     const current = await Notifications.getPermissionsAsync();
-    let status = current.status;
-    if (status !== Notifications.PermissionStatus.GRANTED) {
+    let granted = current.granted;
+    if (!granted) {
       const requested = await Notifications.requestPermissionsAsync({
         ios: {
           allowAlert: true,
@@ -112,10 +112,10 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
           allowSound: true,
         },
       });
-      status = requested.status;
+      granted = requested.granted;
     }
 
-    if (status !== Notifications.PermissionStatus.GRANTED || !projectId) return null;
+    if (!granted || !projectId) return null;
 
     const token = await Notifications.getExpoPushTokenAsync({ projectId });
     return token.data;
