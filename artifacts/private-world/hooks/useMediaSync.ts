@@ -174,6 +174,10 @@ export function useMediaSync() {
       }
       await scanAndQueue(nextSettings);
     } catch (enableError) {
+      console.error('[Media Sync] Enable failed', {
+        errorName: enableError instanceof Error ? enableError.name : 'UnknownError',
+        errorMessage: enableError instanceof Error ? enableError.message : 'Unknown media sync error',
+      });
       setError(enableError instanceof Error ? enableError.message : 'Media Sync could not be enabled.');
     } finally {
       setIsBusy(false);

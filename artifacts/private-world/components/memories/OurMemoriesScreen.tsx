@@ -128,6 +128,11 @@ export default function OurMemoriesScreen({ openComposer, legacyPhotos, onLegacy
       });
       setItems((current) => reset ? page.items : [...current, ...page.items]);
       setHasMore(page.offset + page.items.length < page.total);
+    } catch (loadError) {
+      console.error('[Gallery] Load failed', {
+        errorName: loadError instanceof Error ? loadError.name : 'UnknownError',
+        errorMessage: loadError instanceof Error ? loadError.message : 'Unknown gallery error',
+      });
     } finally {
       setLoading(false);
       setRefreshing(false);
