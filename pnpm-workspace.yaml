@@ -75,6 +75,9 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # google-gax 3.x requests an older protobufjs tarball that is unavailable
+  # through the package firewall; this compatible version is already in the lockfile.
+  protobufjs: 7.6.5
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"

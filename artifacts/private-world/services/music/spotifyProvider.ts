@@ -1,25 +1,70 @@
+import {
+  addSpotifyPlayerStateListener,
+  connectSpotifyAsync,
+  disconnectSpotify,
+  isSpotifyConnected,
+  pauseSpotifyAsync,
+  playSpotifyUriAsync,
+  resumeSpotifyAsync,
+  seekSpotifyToAsync,
+  skipSpotifyNextAsync,
+  skipSpotifyPreviousAsync,
+  type SpotifyPlayerState,
+} from '@private-world/spotify';
 import type { MusicProvider, MusicTrack, PlaybackState } from './types';
 
-/**
- * Spotify is deliberately not backed by the local audio player. A production
- * Android bridge must call the official Spotify App Remote SDK, which controls
- * the authenticated Spotify app and never exposes an audio stream to us.
- */
 export class SpotifyProvider implements MusicProvider {
   readonly id = 'spotify' as const;
+  private state: SpotifyPlayerState = { isPaused: true, positionMs: 0, durationMs: 0, track: null };
 
-  private unavailable(): never {
-    throw new Error('Spotify playback needs the official Android App Remote bridge and an authorized Spotify account.');
+  async connect(): Promise<void> {
+    const clientId = process.env.EXPO_PUBLIC_SPOTIFY_CLIENT_ID ?? '';
+    const redirectUri = process.env.EXPO_PUBLIC_SPOTIFY_REDIRECT_URI ?? 'private-world://spotify-callback';
+    await connectSpotifyAsync(clientId, redirectUri);
+  }
+
+  disconnect(): void {
+    disconnectSpotify();
+    this.state = { isPaused: true, positionMs: 0, durationMs: 0, track: null };
+  }
+
+  isConnected(): boolean {
+    return isSpotifyConnected();
+  }
+
+  subscribe(listener: (state: PlaybackState) => void): () => void {
+    const subscription = addSpotifyPlayerStateListener((state) => {
+      this.state = state;
+      listener(this.toPlaybackState());
+    });
+    return () => subscription?.remove();
+  }
+
+  private toPlaybackState(): PlaybackState {
+    const track = this.state.track;
+    return {
+      provider: 'spotify',
+      track: track ? {
+        id: track.uri,
+        provider: 'spotify',
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+      } : null,
+      isPlaying: !this.state.isPaused,
+      positionMs: this.state.positionMs,
+      durationMs: this.state.durationMs,
+    };
   }
 
   async getState(): Promise<PlaybackState> {
-    return { provider: 'spotify', track: null, isPlaying: false, positionMs: 0, durationMs: 0 };
+    return this.toPlaybackState();
   }
 
-  async play(_track: MusicTrack): Promise<void> { this.unavailable(); }
-  async pause(): Promise<void> { this.unavailable(); }
-  async resume(): Promise<void> { this.unavailable(); }
-  async seek(_positionMs: number): Promise<void> { this.unavailable(); }
-  async next(): Promise<void> { this.unavailable(); }
-  async previous(): Promise<void> { this.unavailable(); }
+  async play(track: MusicTrack): Promise<void> { await playSpotifyUriAsync(track.id); }
+  async pause(): Promise<void> { await pauseSpotifyAsync(); }
+  async resume(): Promise<void> { await resumeSpotifyAsync(); }
+  async seek(positionMs: number): Promise<void> { await seekSpotifyToAsync(positionMs); }
+  async next(): Promise<void> { await skipSpotifyNextAsync(); }
+  async previous(): Promise<void> { await skipSpotifyPreviousAsync(); }
 }

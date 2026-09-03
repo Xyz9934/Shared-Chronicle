@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import type { NotificationResponse } from 'expo-notifications';
+import { PermissionStatus } from 'expo-modules-core';
 import { Platform } from 'react-native';
 import { auth } from '@/services/firebase';
 
@@ -103,7 +104,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
 
   try {
     const current = await Notifications.getPermissionsAsync();
-    let granted = current.granted;
+    let granted = current.status === PermissionStatus.GRANTED;
     if (!granted) {
       const requested = await Notifications.requestPermissionsAsync({
         ios: {
@@ -112,7 +113,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
           allowSound: true,
         },
       });
-      granted = requested.granted;
+      granted = requested.status === PermissionStatus.GRANTED;
     }
 
     if (!granted || !projectId) return null;

@@ -68,6 +68,7 @@ catalogs:
       version: 3.25.76
 
 overrides:
+  protobufjs: 7.6.5
   esbuild>@esbuild/darwin-arm64: '-'
   esbuild>@esbuild/darwin-x64: '-'
   esbuild>@esbuild/freebsd-arm64: '-'
@@ -420,6 +421,9 @@ importers:
       '@private-world/media-sync':
         specifier: file:./modules/media-sync
         version: file:artifacts/private-world/modules/media-sync(expo@54.0.37)
+      '@private-world/spotify':
+        specifier: file:./modules/spotify
+        version: file:artifacts/private-world/modules/spotify(expo@54.0.37)
       '@supabase/supabase-js':
         specifier: ^2.57.4
         version: 2.112.3(@opentelemetry/api@1.9.1)
@@ -1829,6 +1833,11 @@ packages:
     peerDependencies:
       expo: '*'
 
+  '@private-world/spotify@file:artifacts/private-world/modules/spotify':
+    resolution: {directory: artifacts/private-world/modules/spotify, type: directory}
+    peerDependencies:
+      expo: '*'
+
   '@protobufjs/aspromise@1.1.2':
     resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
 
@@ -1846,9 +1855,6 @@ packages:
 
   '@protobufjs/float@1.0.2':
     resolution: {integrity: sha512-Ddb+kVXlXst9d+R9PfTIxh1EdNkgoRe5tOX6t01f1lYWOvJnSPDBlG241QLzcyPdoNTsblLUdujGSE4RzrTZGQ==}
-
-  '@protobufjs/inquire@1.1.2':
-    resolution: {integrity: sha512-pa0vFRuws4wkvaXKK1uXZMAwAX4/t8ANaJo45iw/oQHNQ9q5xUzwgFmVJGXiga2BeN+zpX7Vf9vmsiIa2J+MUw==}
 
   '@protobufjs/path@1.1.2':
     resolution: {integrity: sha512-6JOcJ5Tm08dOHAbdR3GrvP+yUUfkjG5ePsHYczMFLq3ZmMkAD98cDgcT2iA1lJ9NVwFd4tH/iSSoe44YWkltEA==}
@@ -5649,11 +5655,7 @@ packages:
     engines: {node: '>=12.0.0'}
     hasBin: true
     peerDependencies:
-      protobufjs: ^7.0.0
-
-  protobufjs@7.2.4:
-    resolution: {integrity: sha512-AT+RJgD2sH8phPmCf7OUZR8xGdcJRga4+1cOaXJ64hvcSkVhNcRHOwIxUatPH15+nj59WAGTDv3LSGZPEQbJaQ==}
-    engines: {node: '>=12.0.0'}
+      protobufjs: 7.6.5
 
   protobufjs@7.6.5:
     resolution: {integrity: sha512-/FPD0nUc9jH6rfFjji9IBqOz4pcSE3CsT1m7Ep6Mdb0LxSUMj8hgl6GomOvZzpNpAqqGaXA0P3VSrZLFzIhQrw==}
@@ -8716,6 +8718,10 @@ snapshots:
     dependencies:
       expo: 54.0.37(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@6.1.2)(expo-router@6.0.24)(react-native@0.81.5(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.1.17)(react@19.1.0)(supports-color@8.1.1))(react@19.1.0)(supports-color@8.1.1)(typescript@5.9.3)
 
+  '@private-world/spotify@file:artifacts/private-world/modules/spotify(expo@54.0.37)':
+    dependencies:
+      expo: 54.0.37(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@6.1.2)(expo-router@6.0.24)(react-native@0.81.5(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.1.17)(react@19.1.0)(supports-color@8.1.1))(react@19.1.0)(supports-color@8.1.1)(typescript@5.9.3)
+
   '@protobufjs/aspromise@1.1.2': {}
 
   '@protobufjs/base64@1.1.2': {}
@@ -8729,9 +8735,6 @@ snapshots:
       '@protobufjs/aspromise': 1.1.2
 
   '@protobufjs/float@1.0.2': {}
-
-  '@protobufjs/inquire@1.1.2':
-    optional: true
 
   '@protobufjs/path@1.1.2': {}
 
@@ -12120,8 +12123,8 @@ snapshots:
       node-fetch: 2.7.0
       object-hash: 3.0.0
       proto3-json-serializer: 1.1.1
-      protobufjs: 7.2.4
-      protobufjs-cli: 1.1.1(protobufjs@7.2.4)
+      protobufjs: 7.6.5
+      protobufjs-cli: 1.1.1(protobufjs@7.6.5)
       retry-request: 5.0.2(supports-color@8.1.1)
     transitivePeerDependencies:
       - encoding
@@ -13594,7 +13597,7 @@ snapshots:
       protobufjs: 7.6.5
     optional: true
 
-  protobufjs-cli@1.1.1(protobufjs@7.2.4):
+  protobufjs-cli@1.1.1(protobufjs@7.6.5):
     dependencies:
       chalk: 4.1.2
       escodegen: 1.14.3
@@ -13603,26 +13606,10 @@ snapshots:
       glob: 8.1.0
       jsdoc: 4.0.5
       minimist: 1.2.8
-      protobufjs: 7.2.4
+      protobufjs: 7.6.5
       semver: 7.8.5
       tmp: 0.2.7
       uglify-js: 3.19.3
-    optional: true
-
-  protobufjs@7.2.4:
-    dependencies:
-      '@protobufjs/aspromise': 1.1.2
-      '@protobufjs/base64': 1.1.2
-      '@protobufjs/codegen': 2.0.5
-      '@protobufjs/eventemitter': 1.1.1
-      '@protobufjs/fetch': 1.1.1
-      '@protobufjs/float': 1.0.2
-      '@protobufjs/inquire': 1.1.2
-      '@protobufjs/path': 1.1.2
-      '@protobufjs/pool': 1.1.0
-      '@protobufjs/utf8': 1.1.2
-      '@types/node': 25.9.5
-      long: 5.3.2
     optional: true
 
   protobufjs@7.6.5:

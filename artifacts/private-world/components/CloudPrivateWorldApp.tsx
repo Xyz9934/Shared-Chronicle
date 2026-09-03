@@ -13,7 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus, type AudioPlayer } from 'expo-audio';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { Feather } from '@expo/vector-icons';
@@ -27,6 +27,7 @@ import OurMemoriesScreen from '@/components/memories/OurMemoriesScreen';
 import { getCachedMusicUri, downloadPrivateMusic, removePrivateMusicDownload } from '@/services/music/privateMusicCache';
 import { getPrivateMusicDownloadUrl } from '@/services/music/privateMusicApi';
 import { isSupportedPrivateAudio, type PrivateMusicTrack } from '@/services/music/types';
+import { SpotifyProvider } from '@/services/music/spotifyProvider';
 
 const c = colors.light;
 type Icon = keyof typeof Feather.glyphMap;
@@ -271,19 +272,33 @@ function Music({ openComposer }: { openComposer: () => void }) {
   const [shuffle, setShuffle] = useState(false);
   const [downloads, setDownloads] = useState<Record<string, boolean>>({});
   const [downloading, setDownloading] = useState<string | null>(null);
-  const sound = useRef<AudioPlayer | null>(null);
+  const audioPlayer = useAudioPlayer(null, { updateInterval: 400, keepAudioSessionActive: true });
+  const audioStatus = useAudioPlayerStatus(audioPlayer);
+  const sound = useRef<AudioPlayer>(audioPlayer);
   const spin = useRef(new Animated.Value(0)).current;
+  const spotify = useMemo(() => new SpotifyProvider(), []);
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [spotifyState, setSpotifyState] = useState<Awaited<ReturnType<SpotifyProvider['getState']>> | null>(null);
+  const [spotifyError, setSpotifyError] = useState('');
   useEffect(() => {
     void setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: 'duckOthers', shouldRouteThroughEarpiece: false });
     void Promise.all(songs.map(async (song) => [song.id, await getCachedMusicUri(song.id)] as const)).then((entries) => setDownloads(Object.fromEntries(entries.map(([id, uri]) => [id, Boolean(uri)]))));
-    const player = createAudioPlayer(null, { updateInterval: 400, keepAudioSessionActive: true });
-    sound.current = player;
-    const subscription = player.addListener('playbackStatusUpdate', (status) => {
-      setProgress(status.currentTime / Math.max(status.duration || 1, 1));
-      if (status.didJustFinish) setPlaying(null);
-    });
-    return () => { subscription.remove(); player.clearLockScreenControls(); player.remove(); sound.current = null; };
+    return () => { audioPlayer.clearLockScreenControls(); };
   }, []);
+  useEffect(() => {
+    setProgress(audioStatus.currentTime / Math.max(audioStatus.duration || 1, 1));
+    if (audioStatus.didJustFinish) setPlaying(null);
+  }, [audioStatus.currentTime, audioStatus.duration, audioStatus.didJustFinish]);
+  useEffect(() => spotify.subscribe(setSpotifyState), [spotify]);
+  const connectSpotify = async () => {
+    setSpotifyError('');
+    try { await spotify.connect(); setSpotifyConnected(true); setSpotifyState(await spotify.getState()); }
+    catch (error) { setSpotifyConnected(false); setSpotifyError(error instanceof Error ? error.message : 'Spotify could not connect.'); }
+  };
+  const spotifyAction = async (action: () => Promise<void>) => {
+    setSpotifyError('');
+    try { await action(); } catch (error) { setSpotifyError(error instanceof Error ? error.message : 'Spotify action failed.'); }
+  };
   const adjacent = async (currentId: string, delta: number) => {
     const ids = queue.length ? queue : songs.map((song) => song.id);
     const index = ids.indexOf(currentId);
@@ -312,7 +327,8 @@ function Music({ openComposer }: { openComposer: () => void }) {
   };
   return <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
     <View style={styles.pageHeading}><View><Text style={styles.eyebrow}>Your soundtrack</Text><Text style={styles.pageTitle}>Music</Text></View><IconButton icon="plus" label="Upload music" onPress={openComposer} color={c.primary} /></View>
-    <View style={styles.spotifyCard}><View style={styles.spotifyMark}><Feather name="music" size={19} color="#1ed760" /></View><View style={{ flex: 1 }}><Text style={styles.spotifyTitle}>Spotify</Text><Text style={styles.spotifyBody}>Account connection is separate from your shared uploads. Spotify audio is never copied or cached here.</Text></View><Text style={styles.spotifySetup}>Setup required</Text></View>
+    <View style={styles.spotifyCard}><View style={styles.spotifyMark}><Feather name="music" size={19} color="#1ed760" /></View><View style={{ flex: 1 }}><Text style={styles.spotifyTitle}>Spotify</Text><Text style={styles.spotifyBody}>{spotifyConnected ? 'Connected to the Spotify app.' : 'Controls playback in the installed Spotify app. Audio is never copied or cached here.'}</Text>{spotifyError ? <Text style={styles.spotifyError}>{spotifyError}</Text> : null}{spotifyState?.track ? <><Text style={styles.spotifyNowPlaying}>{spotifyState.track.title}</Text><Text style={styles.spotifyArtist}>{spotifyState.track.artist || 'Unknown artist'}</Text></> : null}</View><Pressable onPress={() => spotifyConnected ? (spotify.disconnect(), setSpotifyConnected(false), setSpotifyState(null)) : void connectSpotify()}><Text style={styles.spotifySetup}>{spotifyConnected ? 'Disconnect' : 'Connect'}</Text></Pressable></View>
+    {spotifyConnected && <View style={styles.spotifyControls}><Pressable onPress={() => void spotifyAction(() => spotify.seek(Math.max(0, (spotifyState?.positionMs ?? 0) - 15000)))}><Text style={styles.spotifySeek}>−15s</Text></Pressable><IconButton icon="skip-back" label="Previous Spotify track" onPress={() => void spotifyAction(() => spotify.previous())} color="#1ed760" /><IconButton icon={spotifyState?.isPlaying ? 'pause' : 'play'} label={spotifyState?.isPlaying ? 'Pause Spotify' : 'Resume Spotify'} onPress={() => void spotifyAction(() => spotifyState?.isPlaying ? spotify.pause() : spotify.resume())} color="#1ed760" /><IconButton icon="skip-forward" label="Next Spotify track" onPress={() => void spotifyAction(() => spotify.next())} color="#1ed760" /><Pressable onPress={() => void spotifyAction(() => spotify.seek(Math.min(spotifyState?.durationMs ?? Infinity, (spotifyState?.positionMs ?? 0) + 15000)))}><Text style={styles.spotifySeek}>+15s</Text></Pressable></View>}
     <View style={styles.musicSectionHeading}><Text style={styles.sectionTitle}>Shared library</Text><Button title="Upload song" icon="upload" onPress={openComposer} ghost /></View>
     {songs.length ? songs.map((song) => <View key={song.id} style={styles.songCard}>
       <Animated.View style={[styles.cd, playing === song.id && { transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>{song.artworkUrl ? <Image source={{ uri: song.artworkUrl }} style={styles.cdImage} /> : <Feather name="music" size={25} color="#fff" />}<View style={styles.cdHole} /></Animated.View>
@@ -408,7 +424,7 @@ const styles = StyleSheet.create({
   timelineRow: { flexDirection: 'row', gap: 12 }, timelineRail: { alignItems: 'center', width: 16 }, timelineDot: { backgroundColor: c.primary, borderColor: '#fff', borderRadius: 8, borderWidth: 3, height: 16, width: 16, zIndex: 1 }, timelineLine: { backgroundColor: c.border, flex: 1, marginTop: -1, width: 2 }, timelineCard: { backgroundColor: '#fff', borderColor: c.border, borderRadius: 18, borderWidth: 1, flex: 1, marginBottom: 13, padding: 15 }, timelineImage: { borderRadius: 12, height: 130, marginBottom: 12, width: '100%' },
   letterCard: { alignItems: 'flex-start', backgroundColor: '#fff', borderColor: c.border, borderRadius: 20, borderWidth: 1, flexDirection: 'row', gap: 12, marginBottom: 12, padding: 15 }, envelope: { alignItems: 'center', backgroundColor: c.secondary, borderRadius: 18, height: 52, justifyContent: 'center', width: 52 }, letterDate: { color: c.primary, fontSize: 10, fontWeight: '800' }, letterTitle: { color: c.foreground, fontSize: 16, fontWeight: '800', marginTop: 4 }, letterHint: { color: c.mutedForeground, fontSize: 12, marginTop: 5 }, letterMessage: { color: c.foreground, fontSize: 14, lineHeight: 21, marginTop: 8 },
   songCard: { alignItems: 'center', backgroundColor: '#fff', borderColor: c.border, borderRadius: 20, borderWidth: 1, flexDirection: 'row', gap: 13, marginBottom: 12, padding: 13 }, cd: { alignItems: 'center', backgroundColor: '#b95a79', borderColor: '#e9bdca', borderRadius: 34, borderWidth: 4, height: 68, justifyContent: 'center', overflow: 'hidden', width: 68 }, cdImage: { height: '100%', width: '100%' }, cdHole: { backgroundColor: '#fff4f5', borderColor: '#b95a79', borderRadius: 6, borderWidth: 2, height: 12, position: 'absolute', width: 12 }, songTitle: { color: c.foreground, fontSize: 15, fontWeight: '800' }, songArtist: { color: c.mutedForeground, fontSize: 12, marginTop: 3 }, progressTrack: { backgroundColor: c.muted, borderRadius: 3, height: 4, marginTop: 10, overflow: 'hidden', width: '100%' }, progressFill: { backgroundColor: c.primary, borderRadius: 3, height: '100%' },
-  spotifyCard: { alignItems: 'center', backgroundColor: '#142b20', borderRadius: 19, flexDirection: 'row', gap: 11, marginBottom: 21, padding: 14 }, spotifyMark: { alignItems: 'center', backgroundColor: '#0a1e12', borderRadius: 18, height: 36, justifyContent: 'center', width: 36 }, spotifyTitle: { color: '#fff', fontSize: 14, fontWeight: '800' }, spotifyBody: { color: '#b5d8c3', fontSize: 10, lineHeight: 14, marginTop: 2 }, spotifySetup: { color: '#9be6ae', fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, musicSectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }, songActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 11, marginTop: 9 }, nowPlaying: { backgroundColor: '#fff', borderColor: c.border, borderRadius: 20, borderWidth: 1, marginTop: 4, padding: 15 }, nowPlayingLabel: { color: c.primary, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase' }, nowPlayingTitle: { color: c.foreground, fontSize: 16, fontWeight: '800', marginTop: 3 }, playerControls: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-around', marginTop: 7 },
+  spotifyCard: { alignItems: 'center', backgroundColor: '#142b20', borderRadius: 19, flexDirection: 'row', gap: 11, marginBottom: 10, padding: 14 }, spotifyMark: { alignItems: 'center', backgroundColor: '#0a1e12', borderRadius: 18, height: 36, justifyContent: 'center', width: 36 }, spotifyTitle: { color: '#fff', fontSize: 14, fontWeight: '800' }, spotifyBody: { color: '#b5d8c3', fontSize: 10, lineHeight: 14, marginTop: 2 }, spotifyError: { color: '#ffb4ab', fontSize: 10, marginTop: 4 }, spotifyNowPlaying: { color: '#fff', fontSize: 12, fontWeight: '800', marginTop: 7 }, spotifyArtist: { color: '#b5d8c3', fontSize: 10, marginTop: 2 }, spotifySetup: { color: '#9be6ae', fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, spotifyControls: { alignItems: 'center', backgroundColor: '#142b20', borderRadius: 19, flexDirection: 'row', justifyContent: 'space-around', marginBottom: 21 }, spotifySeek: { color: '#9be6ae', fontSize: 11, fontWeight: '800' }, musicSectionHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }, songActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 11, marginTop: 9 }, nowPlaying: { backgroundColor: '#fff', borderColor: c.border, borderRadius: 20, borderWidth: 1, marginTop: 4, padding: 15 }, nowPlayingLabel: { color: c.primary, fontSize: 10, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase' }, nowPlayingTitle: { color: c.foreground, fontSize: 16, fontWeight: '800', marginTop: 3 }, playerControls: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-around', marginTop: 7 },
   chat: { flex: 1, paddingHorizontal: 20 }, chatIntro: { alignItems: 'center', flexDirection: 'row', gap: 11, paddingBottom: 12 }, chatAvatar: { alignItems: 'center', backgroundColor: c.secondary, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 }, messageList: { gap: 10, paddingBottom: 16, paddingTop: 10 }, messageRow: { alignItems: 'flex-start', flexDirection: 'row' }, messageRowMine: { justifyContent: 'flex-end' }, bubble: { borderRadius: 19, maxWidth: '83%', paddingHorizontal: 14, paddingVertical: 10 }, bubbleTheirs: { backgroundColor: '#fff', borderColor: c.border, borderWidth: 1, borderBottomLeftRadius: 5 }, bubbleMine: { backgroundColor: c.primary, borderBottomRightRadius: 5 }, bubbleUnread: { borderColor: c.primary, borderWidth: 2 }, bubbleText: { color: c.foreground, fontSize: 14, lineHeight: 20 }, bubbleTextMine: { color: '#fff' }, bubbleMeta: { alignItems: 'center', flexDirection: 'row', gap: 5, justifyContent: 'flex-end', marginTop: 4 }, bubbleTime: { color: c.mutedForeground, fontSize: 9 }, bubbleTimeMine: { color: '#f7d9e1' }, messageTicks: { alignItems: 'center', flexDirection: 'row', height: 14 }, secondTick: { marginLeft: -7 }, unreadLabel: { color: c.primary, fontSize: 8, fontWeight: '900' }, composer: { alignItems: 'center', backgroundColor: '#fff', borderColor: c.border, borderRadius: 20, borderWidth: 1, flexDirection: 'row', marginBottom: 14, padding: 6 }, composerInput: { color: c.foreground, flex: 1, fontSize: 14, minHeight: 38, paddingHorizontal: 10 }, send: { alignItems: 'center', backgroundColor: c.primary, borderRadius: 17, height: 34, justifyContent: 'center', width: 34 }, sendDisabled: { opacity: 0.4 },
   modalBackdrop: { backgroundColor: '#271b2488', flex: 1, justifyContent: 'flex-end' }, sheet: { backgroundColor: c.background, borderTopLeftRadius: 30, borderTopRightRadius: 30, maxHeight: '92%', paddingHorizontal: 20, paddingTop: 10 }, sheetHandle: { alignSelf: 'center', backgroundColor: c.border, borderRadius: 3, height: 5, width: 46 }, sheetHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 16 }, sheetTitle: { color: c.foreground, fontSize: 22, fontWeight: '800', marginTop: 3 }, sheetScroll: { paddingBottom: 30 }, uploadProgress: { backgroundColor: c.muted, borderRadius: 5, height: 7, marginBottom: 12, overflow: 'hidden' }, progressText: { color: c.mutedForeground, fontSize: 10, marginTop: 10 }, settingsNote: { color: c.mutedForeground, fontSize: 13, lineHeight: 19, marginBottom: 18 }, formSection: { color: c.primary, fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 12, marginTop: 3, textTransform: 'uppercase' },
   viewer: { alignItems: 'center', backgroundColor: '#181016', flex: 1, justifyContent: 'center', padding: 20 }, fullImage: { height: '76%', width: '100%' }, viewerCaption: { color: '#fff', fontSize: 13, marginTop: 14, textAlign: 'center' }, finalMessage: { bottom: 5, color: c.mutedForeground, fontSize: 9, position: 'absolute', right: 16 },
